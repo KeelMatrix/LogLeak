@@ -14,6 +14,6 @@
     <ProjectReference Include="../LogLeak.Probe.PlainLogging/LogLeak.Probe.PlainLogging.csproj" />
     <ProjectReference Include="../LogLeak.Probe.AspNetApp/LogLeak.Probe.AspNetApp.csproj" />
     <ProjectReference Include="../LogLeak.Probe.Serilog/LogLeak.Probe.Serilog.csproj" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
   </ItemGroup>
 </Project>

@@ -1,5 +1,8 @@
 * text=auto
-*.cs text eol=lf
-*.csproj text eol=lf
-*.props text eol=lf
-*.sln text eol=lf
+*.cs text diff=csharp
+*.csproj text
+*.props text
+*.targets text
+*.sln text
+*.md text
+*.ps1 text eol=lf

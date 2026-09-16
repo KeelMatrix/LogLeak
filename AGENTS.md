@@ -7,6 +7,7 @@
 - `samples/KeelMatrix.LogLeak.AspNetCore` is a non-packable ASP.NET Core consumer example.
 - `tests/LogLeak.PackageConsumer` is an isolated package-reference smoke consumer and is not part of the solution.
 - `src/LogLeak.Probe.Core` and `tests/LogLeak.Probe.*` contain the retained feasibility corpus.
+- `build/Invoke-PackageGate.ps1` is the reproducible Release pack, archive inspection, and isolated consumer gate.
 
 ## Validation
 
@@ -16,13 +17,19 @@ Run the focused test project during implementation:
 dotnet test tests/KeelMatrix.LogLeak.Tests/KeelMatrix.LogLeak.Tests.csproj -c Release
 ```
 
+Run the package gate before handoff:
+
+```text
+pwsh ./build/Invoke-PackageGate.ps1 -Stage All
+```
+
 Run the complete probe corpus only when validating the retained corpus:
 
 ```text
 dotnet run --project tests/LogLeak.Probe.Runner/LogLeak.Probe.Runner.csproj -c Release --no-restore
 ```
 
-Before handoff, build `LogLeak.Probe.sln` in Release and inspect the package plus an isolated package consumer. Keep all non-shipping projects non-packable and keep generated output out of source control.
+Keep all non-shipping projects non-packable and keep generated output out of source control. Use `docs/DEV.md` for the complete developer command set.
 
 ## Scope
 

@@ -1,0 +1,48 @@
+#nullable enable
+KeelMatrix.LogLeak.LogLeakAssertionException
+KeelMatrix.LogLeak.LogLeakAssertionException.Findings.get -> System.Collections.Generic.IReadOnlyList<KeelMatrix.LogLeak.LogLeakFinding!>!
+KeelMatrix.LogLeak.LogLeakConfigurationException
+KeelMatrix.LogLeak.LogLeakDisposedException
+KeelMatrix.LogLeak.LogLeakFinding
+KeelMatrix.LogLeak.LogLeakFinding.CategoryName.get -> string?
+KeelMatrix.LogLeak.LogLeakFinding.EventId.get -> int
+KeelMatrix.LogLeak.LogLeakFinding.EventName.get -> string?
+KeelMatrix.LogLeak.LogLeakFinding.Location.get -> KeelMatrix.LogLeak.LogLeakLocation
+KeelMatrix.LogLeak.LogLeakFinding.PropertyName.get -> string?
+KeelMatrix.LogLeak.LogLeakFinding.SentinelLabel.get -> string!
+KeelMatrix.LogLeak.LogLeakInconclusiveException
+KeelMatrix.LogLeak.LogLeakInconclusiveException.Findings.get -> System.Collections.Generic.IReadOnlyList<KeelMatrix.LogLeak.LogLeakFinding!>!
+KeelMatrix.LogLeak.LogLeakInconclusiveException.Reason.get -> string!
+KeelMatrix.LogLeak.LogLeakLocation
+KeelMatrix.LogLeak.LogLeakLocation.ExceptionRepresentation = 3 -> KeelMatrix.LogLeak.LogLeakLocation
+KeelMatrix.LogLeak.LogLeakLocation.FormattedMessage = 0 -> KeelMatrix.LogLeak.LogLeakLocation
+KeelMatrix.LogLeak.LogLeakLocation.Scope = 2 -> KeelMatrix.LogLeak.LogLeakLocation
+KeelMatrix.LogLeak.LogLeakLocation.StructuredProperty = 1 -> KeelMatrix.LogLeak.LogLeakLocation
+KeelMatrix.LogLeak.LogLeakOptions
+KeelMatrix.LogLeak.LogLeakOptions.LogLeakOptions(int maximumCapturedEvents = 4096, int maximumSentinels = 128, int maximumFindings = 4096, int maximumSentinelCharacters = 4096, int maximumPayloadCharacters = 4096, int maximumInspectionUnitsPerEvent = 1024, int maximumFindingsPerEvent = 256, long maximumTransientAllocationBytes = 1048576) -> void
+KeelMatrix.LogLeak.LogLeakOptions.MaximumCapturedEvents.get -> int
+KeelMatrix.LogLeak.LogLeakOptions.MaximumFindings.get -> int
+KeelMatrix.LogLeak.LogLeakOptions.MaximumFindingsPerEvent.get -> int
+KeelMatrix.LogLeak.LogLeakOptions.MaximumInspectionUnitsPerEvent.get -> int
+KeelMatrix.LogLeak.LogLeakOptions.MaximumPayloadCharacters.get -> int
+KeelMatrix.LogLeak.LogLeakOptions.MaximumSentinelCharacters.get -> int
+KeelMatrix.LogLeak.LogLeakOptions.MaximumSentinels.get -> int
+KeelMatrix.LogLeak.LogLeakOptions.MaximumTransientAllocationBytes.get -> long
+KeelMatrix.LogLeak.LogLeakProbe
+KeelMatrix.LogLeak.LogLeakProbe.AddSecret(string! label, string! value) -> KeelMatrix.LogLeak.LogLeakProbe!
+KeelMatrix.LogLeak.LogLeakProbe.AssertNoLeaks() -> void
+KeelMatrix.LogLeak.LogLeakProbe.Dispose() -> void
+KeelMatrix.LogLeak.LogLeakProbe.LogLeakProbe(KeelMatrix.LogLeak.LogLeakOptions? options = null) -> void
+KeelMatrix.LogLeak.LogLeakProbe.Provider.get -> Microsoft.Extensions.Logging.ILoggerProvider!
+KeelMatrix.LogLeak.LogLeakProbe.Verify() -> KeelMatrix.LogLeak.LogLeakVerificationResult!
+KeelMatrix.LogLeak.LogLeakVerificationResult
+KeelMatrix.LogLeak.LogLeakVerificationResult.CapturedEventCount.get -> int
+KeelMatrix.LogLeak.LogLeakVerificationResult.Findings.get -> System.Collections.Generic.IReadOnlyList<KeelMatrix.LogLeak.LogLeakFinding!>!
+KeelMatrix.LogLeak.LogLeakVerificationResult.InconclusiveReason.get -> string?
+KeelMatrix.LogLeak.LogLeakVerificationResult.Status.get -> KeelMatrix.LogLeak.LogLeakVerificationStatus
+KeelMatrix.LogLeak.LogLeakVerificationStatus
+KeelMatrix.LogLeak.LogLeakVerificationStatus.Clean = 0 -> KeelMatrix.LogLeak.LogLeakVerificationStatus
+KeelMatrix.LogLeak.LogLeakVerificationStatus.Inconclusive = 2 -> KeelMatrix.LogLeak.LogLeakVerificationStatus
+KeelMatrix.LogLeak.LogLeakVerificationStatus.LeaksDetected = 1 -> KeelMatrix.LogLeak.LogLeakVerificationStatus
+override KeelMatrix.LogLeak.LogLeakFinding.ToString() -> string!
+override KeelMatrix.LogLeak.LogLeakVerificationResult.ToString() -> string!

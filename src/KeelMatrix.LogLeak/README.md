@@ -1,6 +1,6 @@
 # KeelMatrix.LogLeak
 
-Find registered test-only sentinel values at the `Microsoft.Extensions.Logging` provider boundary without exposing those values in diagnostics.
+Redaction code is not proof that sensitive values stayed out of logs. LogLeak lets a test register synthetic sensitive values, exercise the real Microsoft logging path, and fail safely if any registered value survives into supported log fields.
 
 ## Install
 
@@ -46,3 +46,9 @@ Capture is bounded. The defaults inspect at most 4,096 UTF-16 characters per tex
 The package uses `KeelMatrix.Telemetry` only for best-effort activation and weekly heartbeat signals after conclusive verification. No sentinel, log content, exception text, category, event name, or property value is sent by LogLeak. Core verification requires no network. Set `KEELMATRIX_NO_TELEMETRY=1` to opt out.
 
 Use synthetic test-only values. This package verifies registered sentinels at the captured Microsoft logging boundary; it does not inspect arbitrary sinks or discover unregistered sensitive data.
+
+## Documentation
+
+- [Supported fields](https://github.com/KeelMatrix/LogLeak/blob/main/docs/supported-fields.md)
+- [Privacy](https://github.com/KeelMatrix/LogLeak/blob/main/PRIVACY.md)
+- [Security](https://github.com/KeelMatrix/LogLeak/blob/main/SECURITY.md)

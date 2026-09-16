@@ -6,11 +6,11 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <EnablePublicApiAnalyzers>true</EnablePublicApiAnalyzers>
     <Authors>KeelMatrix</Authors>
     <PackageId>KeelMatrix.LogLeak</PackageId>
-    <Version>0.1.0</Version>
-    <Description>Find registered test secrets at the Microsoft.Extensions.Logging provider boundary without exposing their values.</Description>
-    <PackageTags>logging;testing;security;secrets;privacy;diagnostics;aspnetcore</PackageTags>
+    <Description>Verify that explicitly registered sensitive values do not survive into your Microsoft.Extensions.Logging event stream during tests.</Description>
+    <PackageTags>logging;security;privacy;testing;ilogger;aspnetcore;redaction;ci</PackageTags>
     <RepositoryUrl>https://github.com/KeelMatrix/LogLeak</RepositoryUrl>
     <PackageProjectUrl>https://github.com/KeelMatrix/LogLeak#readme</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -34,10 +34,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="KeelMatrix.Telemetry" Version="0.1.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.401" PrivateAssets="all" />
+    <PackageReference Include="KeelMatrix.Telemetry" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
     <None Include="README.md" Pack="true" PackagePath="" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="" Link="LICENSE" />
     <None Include="../../icon.png" Pack="true" PackagePath="" Link="icon.png" />
   </ItemGroup>
 </Project>

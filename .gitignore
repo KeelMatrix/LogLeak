@@ -1,6 +1,16 @@
 ## Build output
 bin/
 obj/
+artifacts/
+
+## Local configuration and package feeds
+.env
+.env.*
+keelmatrix.telemetry.json
+packages/
+*.nupkg
+*.snupkg
+*.nuspec
 
 ## IDE files
 .vs/
@@ -13,5 +23,17 @@ probe-artifacts/
 *.xml
 *.jsonl
 
-# Local package-consumer feed
-artifacts/
+# Test output
+TestResults/
+*.trx
+*.coverage
+coverage/
+
+# IDE and operating-system files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db

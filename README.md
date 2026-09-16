@@ -1,6 +1,6 @@
 # KeelMatrix.LogLeak
 
-Catch registered test-only sentinel values at the `Microsoft.Extensions.Logging` provider boundary without exposing them in diagnostics.
+Redaction code is not proof that sensitive values stayed out of logs. LogLeak lets a test register synthetic sensitive values, exercise the real Microsoft logging path, and fail safely if any registered value survives into supported log fields.
 
 ## Install
 
@@ -31,6 +31,13 @@ probe.AssertNoLeaks();
 
 Use synthetic values created only for tests. A planted value produces a safe `LogLeakAssertionException` containing the registration label, broad leak location, and safe logging metadata. The value, complete message, exception payload, and surrounding state are never included.
 
+## Documentation
+
+- [Supported fields](docs/supported-fields.md)
+- [Privacy](PRIVACY.md)
+- [Security](SECURITY.md)
+- [Development guide](docs/DEV.md)
+
 ## Supported fields
 
 The supported boundary is intentionally frozen to:
@@ -47,6 +54,18 @@ Matching is exact ordinal literal matching. LogLeak does not decode, normalize, 
 Capture defaults are bounded to 4,096 UTF-16 characters per text unit, 1,024 inspection units per event, 256 findings per event, 4,096 findings overall, and 4,096 captured events. The transient per-event allocation guard is 1 MiB. A bound breach returns `Inconclusive` and never `Clean`.
 
 Conclusive verification requests best-effort activation and weekly heartbeat signals through `KeelMatrix.Telemetry`. LogLeak sends no sentinel, log content, exception text, category, event name, or property value. Core verification requires no network. Set `KEELMATRIX_NO_TELEMETRY=1` to opt out.
+
+## Limitations
+
+LogLeak verifies only the captured `Microsoft.Extensions.Logging` provider boundary. It does not inspect arbitrary downstream sinks or discover unregistered sensitive data. The package targets `net8.0` and `netstandard2.0`.
+
+## Troubleshooting
+
+An `Inconclusive` result means a configured capture or resource limit was reached. Increase the relevant `LogLeakOptions` limit only when the test can safely handle the additional bounded work; an inconclusive result is never treated as clean.
+
+## License
+
+MIT
 
 ## Development
 

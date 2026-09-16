@@ -8,4 +8,24 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+
+  <Target Name="RemoveSensitivePackInputs"
+          BeforeTargets="_GetPackageFiles"
+          Condition="'$(IsPackable)' == 'true'">
+    <ItemGroup>
+      <None Remove="**/.env;**/.env.*;**/keelmatrix.telemetry.json;**/*.pfx;**/*.p12;**/*.pem;**/*.key;**/*.crt" />
+      <Content Remove="**/.env;**/.env.*;**/keelmatrix.telemetry.json;**/*.pfx;**/*.p12;**/*.pem;**/*.key;**/*.crt" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="RejectSensitiveFilesInPack"
+          AfterTargets="_GetPackageFiles"
+          Condition="'$(IsPackable)' == 'true'">
+    <ItemGroup>
+      <_ForbiddenPackageFile Include="@(_PackageFiles)"
+        Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(_PackageFiles.PackagePath)', '(?i)(^|/)(\.env(\..*)?|keelmatrix\.telemetry\.json|AGENTS\.md|SOUL\.md|.*(secret|credential|password|research).*)$')) Or $([System.Text.RegularExpressions.Regex]::IsMatch('%(_PackageFiles.PackagePath)', '(?i).*\.(pfx|p12|pem|key|crt)$'))" />
+    </ItemGroup>
+    <Error Condition="'@(_ForbiddenPackageFile)' != ''"
+           Text="Refusing to pack sensitive or internal file(s): @(_ForbiddenPackageFile, ', ')." />
+  </Target>
 </Project>

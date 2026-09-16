@@ -4,10 +4,9 @@
     <IsPackable>false</IsPackable>
     <AssemblyName>KeelMatrix.LogLeak.AspNetCore</AssemblyName>
     <RootNamespace>KeelMatrix.LogLeak.AspNetCore</RootNamespace>
-    <LogLeakPackageVersion Condition="'$(LogLeakPackageVersion)' == ''">0.1.0</LogLeakPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="KeelMatrix.LogLeak" Version="$(LogLeakPackageVersion)" />
+    <PackageReference Include="KeelMatrix.LogLeak" />
   </ItemGroup>
 </Project>
