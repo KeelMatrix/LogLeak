@@ -53,6 +53,8 @@ The live `--performance` gate measures the current run and compares it with thes
 
 Earlier pre-release revisions of this probe set wrote threshold values directly (margin 75%, then 125%). Those hand-set values are superseded: thresholds are now derived from the committed sample set by the fixed rule, and a threshold or margin change requires a committed sample-set or policy change with the recompute check passing.
 
+The live gate consumes one computed statistics object derived from the committed sample set. The provenance check explicitly compares its emit, matching, and sampled-memory thresholds with that same live-consumed object; any divergence names the affected threshold and fails. `--performance` runs this binding check before measuring the gate, so it fails closed before it can report a pass with decoupled thresholds.
+
 Run the deterministic provenance check with:
 
 ```text

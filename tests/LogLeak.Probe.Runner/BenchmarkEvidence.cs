@@ -12,23 +12,11 @@ internal static class BenchmarkEvidence
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly SampleSetDocument CommittedSampleSet = LoadSampleSet(GetDefaultSampleSetPath());
 
-    public static int SampleCount => CommittedSampleSet.Samples.Count;
-    public static double EmitMedianMilliseconds => Calculate(CommittedSampleSet).EmitMedianMilliseconds;
-    public static double MatchingMedianMilliseconds => Calculate(CommittedSampleSet).MatchingMedianMilliseconds;
-    public static long MemoryMedianBytes => Calculate(CommittedSampleSet).MemoryMedianBytes;
-    public static double EmitWorstMilliseconds => Calculate(CommittedSampleSet).EmitWorstMilliseconds;
-    public static double MatchingWorstMilliseconds => Calculate(CommittedSampleSet).MatchingWorstMilliseconds;
-    public static long MemoryWorstBytes => Calculate(CommittedSampleSet).MemoryWorstBytes;
-    public static double EmitThresholdMilliseconds => Calculate(CommittedSampleSet).EmitThresholdMilliseconds;
-    public static double MatchingThresholdMilliseconds => Calculate(CommittedSampleSet).MatchingThresholdMilliseconds;
-    public static long MemoryThresholdBytes => Calculate(CommittedSampleSet).MemoryThresholdBytes;
-    public static double HeadroomFraction => CommittedSampleSet.Rule.HeadroomPercent / 100d;
-    public static double TimeRoundingMilliseconds => CommittedSampleSet.Rule.TimeRoundingMilliseconds;
-    public static long MemoryRoundingBytes => CommittedSampleSet.Rule.MemoryRoundingBytes;
+    internal static BenchmarkStatistics CommittedStatistics => Calculate(CommittedSampleSet);
 
     public static void PrintSampleSet()
     {
-        var statistics = Calculate(CommittedSampleSet);
+        var statistics = CommittedStatistics;
         Console.WriteLine("sample host: Windows x64; target=net8.0; runtime=.NET 8.0.31; workload=100000 events");
         Console.WriteLine($"sample count: {CommittedSampleSet.Samples.Count}");
         foreach (var sample in CommittedSampleSet.Samples)
@@ -79,7 +67,38 @@ internal static class BenchmarkEvidence
         }
 
         var statistics = Calculate(sampleSet!);
+        var liveStatistics = CommittedStatistics;
+        ValidateLiveThresholdBinding(liveStatistics, statistics, failures);
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException("Benchmark provenance check failed:\n- " + string.Join("\n- ", failures));
+        }
+
+        Console.WriteLine($"PASS benchmark threshold binding: live gate consumes emit {FormatMilliseconds(liveStatistics.EmitThresholdMilliseconds)} ms, matching {FormatMilliseconds(liveStatistics.MatchingThresholdMilliseconds)} ms, memory {liveStatistics.MemoryThresholdBytes:N0} bytes from the committed sample-set recomputation.");
         Console.WriteLine($"PASS benchmark provenance: samples={sampleSet!.Samples.Count}; median=emit {statistics.EmitMedianMilliseconds:F2} ms, matching {statistics.MatchingMedianMilliseconds:F2} ms, memory {statistics.MemoryMedianBytes:N0} bytes; worst=emit {statistics.EmitWorstMilliseconds:F2} ms, matching {statistics.MatchingWorstMilliseconds:F2} ms, memory {statistics.MemoryWorstBytes:N0} bytes; thresholds=emit {FormatMilliseconds(statistics.EmitThresholdMilliseconds)} ms, matching {FormatMilliseconds(statistics.MatchingThresholdMilliseconds)} ms, memory {statistics.MemoryThresholdBytes:N0} bytes; rule={sampleSet.Rule.RuleId}; headroom={sampleSet.Rule.HeadroomPercent}%");
+    }
+
+    private static void ValidateLiveThresholdBinding(BenchmarkStatistics liveStatistics, BenchmarkStatistics recomputedStatistics, List<string> failures)
+    {
+        CompareThreshold("emit", liveStatistics.EmitThresholdMilliseconds, recomputedStatistics.EmitThresholdMilliseconds, failures);
+        CompareThreshold("matching", liveStatistics.MatchingThresholdMilliseconds, recomputedStatistics.MatchingThresholdMilliseconds, failures);
+        CompareThreshold("memory", liveStatistics.MemoryThresholdBytes, recomputedStatistics.MemoryThresholdBytes, failures);
+    }
+
+    private static void CompareThreshold(string name, double consumed, double recomputed, List<string> failures)
+    {
+        if (!NearlyEqual(consumed, recomputed))
+        {
+            failures.Add($"live gate {name} threshold is {FormatMilliseconds(consumed)} ms, but recomputation from the committed sample set is {FormatMilliseconds(recomputed)} ms.");
+        }
+    }
+
+    private static void CompareThreshold(string name, long consumed, long recomputed, List<string> failures)
+    {
+        if (consumed != recomputed)
+        {
+            failures.Add($"live gate {name} threshold is {consumed:N0} bytes, but recomputation from the committed sample set is {recomputed:N0} bytes.");
+        }
     }
 
     private static void ValidateSampleSet(SampleSetDocument sampleSet, List<string> failures)
@@ -284,6 +303,10 @@ internal static class BenchmarkEvidence
         var matchingThreshold = Math.Ceiling(matchingWorst * margin / sampleSet.Rule.TimeRoundingMilliseconds) * sampleSet.Rule.TimeRoundingMilliseconds;
         var memoryThreshold = checked((long)(Math.Ceiling(memoryWorst * margin / sampleSet.Rule.MemoryRoundingBytes) * sampleSet.Rule.MemoryRoundingBytes));
         return new BenchmarkStatistics(
+            sampleSet.Samples.Count,
+            sampleSet.Rule.HeadroomPercent / 100d,
+            sampleSet.Rule.TimeRoundingMilliseconds,
+            sampleSet.Rule.MemoryRoundingBytes,
             Median(emit),
             Median(matching),
             Median(memory),
@@ -340,7 +363,11 @@ internal static class BenchmarkEvidence
         public long MemoryBytes { get; set; }
     }
 
-    private sealed record BenchmarkStatistics(
+    internal sealed record BenchmarkStatistics(
+        int SampleCount,
+        double HeadroomFraction,
+        double TimeRoundingMilliseconds,
+        long MemoryRoundingBytes,
         double EmitMedianMilliseconds,
         double MatchingMedianMilliseconds,
         long MemoryMedianBytes,
