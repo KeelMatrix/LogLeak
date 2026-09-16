@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup Condition="'$(TargetFramework)' == '' and '$(TargetFrameworks)' == '' and '$(IsPackable)' != 'true'">
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+</Project>

@@ -2,16 +2,28 @@
 
 ## Layout
 
-- `src/LogLeak.Probe.Core` contains the non-shipping provider-boundary capture and safe matching harness.
-- `tests/LogLeak.Probe.PlainLogging` contains ordinary, template, source-generated, state, scope, exception, and redaction fixtures.
-- `tests/LogLeak.Probe.AspNetApp` is the minimal ASP.NET Core application used by the `WebApplicationFactory` corpus.
-- `tests/LogLeak.Probe.Serilog` routes Microsoft logging through Serilog's provider adapter.
-- `tests/LogLeak.Probe.Runner` is the single executable corpus entry point.
+- `src/KeelMatrix.LogLeak` contains the shipping bounded provider-boundary verifier and its package README.
+- `tests/KeelMatrix.LogLeak.Tests` contains focused, product-level xUnit coverage for the shipping API.
+- `samples/KeelMatrix.LogLeak.AspNetCore` is a non-packable ASP.NET Core consumer example.
+- `tests/LogLeak.PackageConsumer` is an isolated package-reference smoke consumer and is not part of the solution.
+- `src/LogLeak.Probe.Core` and `tests/LogLeak.Probe.*` contain the retained feasibility corpus.
 
 ## Validation
 
-Restore and build the solution in Release, then run the runner from the repository root. The runner must remain the only full-corpus command. Keep all projects non-packable and keep generated output out of source control.
+Run the focused test project during implementation:
+
+```text
+dotnet test tests/KeelMatrix.LogLeak.Tests/KeelMatrix.LogLeak.Tests.csproj -c Release
+```
+
+Run the complete probe corpus only when validating the retained corpus:
+
+```text
+dotnet run --project tests/LogLeak.Probe.Runner/LogLeak.Probe.Runner.csproj -c Release --no-restore
+```
+
+Before handoff, build `LogLeak.Probe.sln` in Release and inspect the package plus an isolated package consumer. Keep all non-shipping projects non-packable and keep generated output out of source control.
 
 ## Scope
 
-This repository is a feasibility probe. Do not add a shipping package, durable product API, CLI, workflow, or sink-specific implementation here.
+The supported boundary is limited to formatted messages, direct string structured properties, nested scope strings, and exception representations. Do not add a CLI, analyzer, source generator, sink-specific implementation, or generic secret scanner.

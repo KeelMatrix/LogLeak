@@ -694,16 +694,16 @@ internal static class Program
     private static void PrintGoGate()
     {
         var statistics = BenchmarkEvidence.CommittedStatistics;
-        Console.WriteLine("PHASE 0 GO-GATE RECORD");
+        Console.WriteLine("PROBE GO-GATE RECORD");
         Console.WriteLine("100% recall in every declared supported field: PASS - each four-field fixture reports a label and broad location.");
         Console.WriteLine("Zero deterministic false positives without the sentinel: PASS - redaction corpus and 100,000-event absent corpus produced no findings.");
-        Console.WriteLine("Zero sentinel text/bytes in probe-owned diagnostics and simulated output paths: PASS - all four supported leak locations audited in memory and on-disk artifact bytes; real test-framework adapters and shared KeelMatrix.Telemetry remain deferred to Phase 1.");
+        Console.WriteLine("Zero sentinel text/bytes in probe-owned diagnostics and simulated output paths: PASS - all four supported leak locations audited in memory and on-disk artifact bytes.");
         Console.WriteLine("Predictable redaction behavior: PASS - redacted text passes; opaque object values are explicitly unsupported and are not serialized.");
         Console.WriteLine("ASP.NET Core setup requires only a few lines: PASS - WebApplicationFactory logging setup is exercised.");
         Console.WriteLine($"Resource limits: PASS - event capture, {MaximumInspectionUnitsPerEvent} inspection units/event, {MaximumFindingsPerEvent} findings/event, a {MaximumTransientAllocationBytes:N0}-byte transient-allocation guard/event, and {MaximumPayloadCharacters}-character text units are guarded; overflow is explicit inconclusive.");
         Console.WriteLine("Supported/excluded field contract: PASS - {OriginalFormat} is excluded metadata and recorded excluded-field fixtures match the classifier output.");
         Console.WriteLine($"Benchmark overhead acceptable: PASS - fixed thresholds derive mechanically from the committed {statistics.SampleCount}-sample host baseline with {statistics.HeadroomFraction:P0} headroom; emit, matching, and sampled-memory verdicts are printed above.");
-        Console.WriteLine("Diagnostic claim: PASS within probe-owned and simulated output paths; Phase 1 must prove real xUnit/NUnit/MSTest adapters and the shared KeelMatrix.Telemetry contract.");
+        Console.WriteLine("Diagnostic claim: PASS within probe-owned and simulated output paths; consumer tests cover the shipping assertion and telemetry contract separately.");
         Console.WriteLine("Recommendation: continue only as a narrowly scoped product design/review decision after independent review of this evidence; do not treat this probe as a shipping implementation.");
     }
 

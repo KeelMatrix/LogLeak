@@ -12,3 +12,6 @@ probe-artifacts/
 *.trx
 *.xml
 *.jsonl
+
+# Local package-consumer feed
+artifacts/

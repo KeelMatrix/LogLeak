@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>LogLeak.PackageConsumer</AssemblyName>
+    <RootNamespace>LogLeak.PackageConsumer</RootNamespace>
+    <LogLeakPackageVersion Condition="'$(LogLeakPackageVersion)' == ''">0.1.0</LogLeakPackageVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="KeelMatrix.LogLeak" Version="$(LogLeakPackageVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
+  </ItemGroup>
+</Project>
