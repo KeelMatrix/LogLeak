@@ -32,7 +32,12 @@ internal static class Program
             Console.WriteLine();
             PrintFieldContract();
 
-            switch (args.FirstOrDefault())
+            var mode = args.FirstOrDefault();
+            BenchmarkEvidence.ValidateProvenance(
+                mode == "--verify-benchmark-provenance" ? GetOption(args, "--policy") : null,
+                mode == "--verify-benchmark-provenance" ? GetOption(args, "--sample-set") : null);
+
+            switch (mode)
             {
                 case "--coverage":
                     RunCoverageCorpus();
@@ -48,7 +53,11 @@ internal static class Program
                     break;
                 case "--performance-samples":
                     RunPerformanceSampleSet();
-                    break;
+                    Console.WriteLine("RESULT: PASS - benchmark sample reproduction completed.");
+                    return 0;
+                case "--verify-benchmark-provenance":
+                    Console.WriteLine("RESULT: PASS - benchmark provenance check completed.");
+                    return 0;
                 case null:
                     RunCoverageCorpus();
                     RunDiagnosticExfiltrationCorpus();
@@ -68,6 +77,7 @@ internal static class Program
         {
             Console.Error.WriteLine("RESULT: FAIL - the probe corpus did not complete.");
             Console.Error.WriteLine($"Failure type: {exception.GetType().FullName}");
+            Console.Error.WriteLine($"Failure: {exception.Message}");
             return 1;
         }
     }
@@ -622,7 +632,7 @@ internal static class Program
     {
         Console.WriteLine("BENCHMARK SAMPLE SET REPRODUCTION");
         BenchmarkEvidence.PrintSampleSet();
-        Console.WriteLine($"sample policy: threshold = ceiling(worst recorded sample x (1 + {BenchmarkEvidence.SafetyMargin:P0})), rounded to the next {BenchmarkEvidence.TimeRoundingMilliseconds:0} ms or {BenchmarkEvidence.MemoryRoundingBytes:N0} byte increment; this policy is fixed before the measured gate run.");
+        Console.WriteLine($"sample policy: threshold = ceiling(worst recorded sample x (1 + {BenchmarkEvidence.HeadroomFraction:P0})), rounded to the next {BenchmarkEvidence.TimeRoundingMilliseconds:0} ms or {BenchmarkEvidence.MemoryRoundingBytes:N0} byte increment; this policy is fixed before the measured gate run.");
         Console.WriteLine($"derived threshold: emit={BenchmarkEvidence.EmitThresholdMilliseconds:F2} ms; matching={BenchmarkEvidence.MatchingThresholdMilliseconds:F2} ms; sampled heap delta={BenchmarkEvidence.MemoryThresholdBytes:N0} bytes");
         Console.WriteLine();
     }
@@ -660,7 +670,7 @@ internal static class Program
         var memoryPass = retained <= BenchmarkEvidence.MemoryThresholdBytes;
 
         Console.WriteLine($"benchmark host: calibration=Windows x64, target=net8.0, runtime={RuntimeInformation.FrameworkDescription}, observed-host={RuntimeInformation.OSDescription}, process={RuntimeInformation.ProcessArchitecture}; thresholds are host-relative, not cross-platform performance guarantees.");
-        Console.WriteLine($"benchmark policy: threshold = ceiling(worst recorded sample x (1 + {BenchmarkEvidence.SafetyMargin:P0})), rounded to the next {BenchmarkEvidence.TimeRoundingMilliseconds:0} ms or {BenchmarkEvidence.MemoryRoundingBytes:N0} byte increment; fixed before this measured gate run.");
+        Console.WriteLine($"benchmark policy: threshold = ceiling(worst recorded sample x (1 + {BenchmarkEvidence.HeadroomFraction:P0})), rounded to the next {BenchmarkEvidence.TimeRoundingMilliseconds:0} ms or {BenchmarkEvidence.MemoryRoundingBytes:N0} byte increment; fixed before this measured gate run.");
         Console.WriteLine($"benchmark sample basis: committed sample set; samples={BenchmarkEvidence.SampleCount}; median emit={BenchmarkEvidence.EmitMedianMilliseconds:F2} ms, matching={BenchmarkEvidence.MatchingMedianMilliseconds:F2} ms, sampled heap delta={BenchmarkEvidence.MemoryMedianBytes:N0} bytes; worst emit={BenchmarkEvidence.EmitWorstMilliseconds:F2} ms, matching={BenchmarkEvidence.MatchingWorstMilliseconds:F2} ms, sampled heap delta={BenchmarkEvidence.MemoryWorstBytes:N0} bytes.");
         Console.WriteLine($"benchmark derived threshold: emit={BenchmarkEvidence.EmitThresholdMilliseconds:F2} ms; matching={BenchmarkEvidence.MatchingThresholdMilliseconds:F2} ms; sampled heap delta={BenchmarkEvidence.MemoryThresholdBytes:N0} bytes");
         PrintBenchmarkGate("emit", BenchmarkEvidence.EmitWorstMilliseconds, BenchmarkEvidence.EmitThresholdMilliseconds, emitElapsed, "ms", emitPass);
@@ -676,7 +686,7 @@ internal static class Program
     private static void PrintBenchmarkGate(string name, double baseline, double threshold, double measured, string unit, bool passed)
     {
         var headroom = threshold - measured;
-        Console.WriteLine($"benchmark gate {name}: sample-worst={baseline:F2} {unit}; threshold={threshold:F2} {unit}; measured={measured:F2} {unit}; margin={BenchmarkEvidence.SafetyMargin:P0}; headroom={headroom:F2} {unit}; {(passed ? "PASS" : "FAIL")}");
+        Console.WriteLine($"benchmark gate {name}: sample-worst={baseline:F2} {unit}; threshold={threshold:F2} {unit}; measured={measured:F2} {unit}; margin={BenchmarkEvidence.HeadroomFraction:P0}; headroom={headroom:F2} {unit}; {(passed ? "PASS" : "FAIL")}");
     }
 
     private static void PrintGoGate()
@@ -689,12 +699,28 @@ internal static class Program
         Console.WriteLine("ASP.NET Core setup requires only a few lines: PASS - WebApplicationFactory logging setup is exercised.");
         Console.WriteLine($"Resource limits: PASS - event capture, {MaximumInspectionUnitsPerEvent} inspection units/event, {MaximumFindingsPerEvent} findings/event, a {MaximumTransientAllocationBytes:N0}-byte transient-allocation guard/event, and {MaximumPayloadCharacters}-character text units are guarded; overflow is explicit inconclusive.");
         Console.WriteLine("Supported/excluded field contract: PASS - {OriginalFormat} is excluded metadata and recorded excluded-field fixtures match the classifier output.");
-        Console.WriteLine($"Benchmark overhead acceptable: PASS - fixed thresholds derive mechanically from the committed {BenchmarkEvidence.SampleCount}-sample host baseline with {BenchmarkEvidence.SafetyMargin:P0} headroom; emit, matching, and sampled-memory verdicts are printed above.");
+        Console.WriteLine($"Benchmark overhead acceptable: PASS - fixed thresholds derive mechanically from the committed {BenchmarkEvidence.SampleCount}-sample host baseline with {BenchmarkEvidence.HeadroomFraction:P0} headroom; emit, matching, and sampled-memory verdicts are printed above.");
         Console.WriteLine("Diagnostic claim: PASS within probe-owned and simulated output paths; Phase 1 must prove real xUnit/NUnit/MSTest adapters and the shared KeelMatrix.Telemetry contract.");
         Console.WriteLine("Recommendation: continue only as a narrowly scoped product design/review decision after independent review of this evidence; do not treat this probe as a shipping implementation.");
     }
 
     private static BoundaryProbe NewProbe(int maximumEvents, int maximumSentinels = 128, int maximumFindings = MaximumFindingsTotal, int maximumPayloadCharacters = MaximumPayloadCharacters, int maximumInspectionUnitsPerEvent = MaximumInspectionUnitsPerEvent, int maximumFindingsPerEvent = MaximumFindingsPerEvent, long maximumTransientAllocationBytes = MaximumTransientAllocationBytes) => new(new CaptureOptions(maximumEvents, maximumSentinels, maximumFindings, maximumPayloadCharacters: maximumPayloadCharacters, maximumInspectionUnitsPerEvent: maximumInspectionUnitsPerEvent, maximumFindingsPerEvent: maximumFindingsPerEvent, maximumTransientAllocationBytes: maximumTransientAllocationBytes));
+
+    private static string? GetOption(string[] args, string optionName)
+    {
+        var optionIndex = Array.IndexOf(args, optionName);
+        if (optionIndex < 0)
+        {
+            return null;
+        }
+
+        if (optionIndex == args.Length - 1)
+        {
+            throw new InvalidOperationException($"Option '{optionName}' requires a path.");
+        }
+
+        return args[optionIndex + 1];
+    }
 
     private static ILoggerFactory CreateFactory(BoundaryProbe probe) => LoggerFactory.Create(builder =>
     {

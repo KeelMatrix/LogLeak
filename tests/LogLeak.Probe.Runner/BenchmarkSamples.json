@@ -1,0 +1,21 @@
+{
+  "schema": "benchmark-sample-set-v1",
+  "rule": {
+    "ruleId": "worst-recorded-sample-plus-headroom-v1",
+    "headroomPercent": 25,
+    "timeRoundingMilliseconds": 1,
+    "memoryRoundingBytes": 100000
+  },
+  "samples": [
+    { "sample": 1, "emitMilliseconds": 87.53, "matchingMilliseconds": 44.08, "memoryBytes": 8310816 },
+    { "sample": 2, "emitMilliseconds": 84.91, "matchingMilliseconds": 44.22, "memoryBytes": 8310816 },
+    { "sample": 3, "emitMilliseconds": 83.14, "matchingMilliseconds": 41.66, "memoryBytes": 8310816 },
+    { "sample": 4, "emitMilliseconds": 83.94, "matchingMilliseconds": 41.66, "memoryBytes": 8318904 },
+    { "sample": 5, "emitMilliseconds": 82.41, "matchingMilliseconds": 41.78, "memoryBytes": 8310760 },
+    { "sample": 6, "emitMilliseconds": 84.10, "matchingMilliseconds": 42.49, "memoryBytes": 8310760 },
+    { "sample": 7, "emitMilliseconds": 82.03, "matchingMilliseconds": 41.72, "memoryBytes": 8310760 },
+    { "sample": 8, "emitMilliseconds": 84.43, "matchingMilliseconds": 42.67, "memoryBytes": 8310760 },
+    { "sample": 9, "emitMilliseconds": 86.88, "matchingMilliseconds": 43.35, "memoryBytes": 8310816 },
+    { "sample": 10, "emitMilliseconds": 80.88, "matchingMilliseconds": 40.38, "memoryBytes": 8310760 }
+  ]
+}

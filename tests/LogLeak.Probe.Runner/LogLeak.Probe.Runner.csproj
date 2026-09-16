@@ -7,6 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="../../BENCHMARK-POLICY.md" Link="BENCHMARK-POLICY.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="BenchmarkSamples.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../../src/LogLeak.Probe.Core/LogLeak.Probe.Core.csproj" />
     <ProjectReference Include="../LogLeak.Probe.PlainLogging/LogLeak.Probe.PlainLogging.csproj" />
     <ProjectReference Include="../LogLeak.Probe.AspNetApp/LogLeak.Probe.AspNetApp.csproj" />
