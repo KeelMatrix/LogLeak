@@ -1,0 +1,14 @@
+## Build output
+bin/
+obj/
+
+## IDE files
+.vs/
+*.user
+*.suo
+
+## Local probe output
+probe-artifacts/
+*.trx
+*.xml
+*.jsonl

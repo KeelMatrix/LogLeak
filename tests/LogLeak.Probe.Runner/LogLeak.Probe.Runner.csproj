@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>LogLeak.Probe.Runner</AssemblyName>
+    <RootNamespace>LogLeak.Probe.Runner</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/LogLeak.Probe.Core/LogLeak.Probe.Core.csproj" />
+    <ProjectReference Include="../LogLeak.Probe.PlainLogging/LogLeak.Probe.PlainLogging.csproj" />
+    <ProjectReference Include="../LogLeak.Probe.AspNetApp/LogLeak.Probe.AspNetApp.csproj" />
+    <ProjectReference Include="../LogLeak.Probe.Serilog/LogLeak.Probe.Serilog.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.1" />
+  </ItemGroup>
+</Project>
