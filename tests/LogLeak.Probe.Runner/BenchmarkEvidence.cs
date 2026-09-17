@@ -6,7 +6,9 @@ namespace LogLeak.Probe.Runner;
 
 internal static class BenchmarkEvidence
 {
-    private const string SupportedRuleId = "worst-recorded-sample-plus-headroom-v1";
+    private const string SupportedRuleId = "worst-normalized-sample-plus-headroom-v2";
+    private const string SupportedSchema = "benchmark-sample-set-v2";
+    private const int RequiredSampleCount = 10;
     private const string PolicyFileName = "BENCHMARK-POLICY.md";
     private const string SampleSetFileName = "BenchmarkSamples.json";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -17,11 +19,11 @@ internal static class BenchmarkEvidence
     public static void PrintSampleSet()
     {
         var statistics = CommittedStatistics;
-        Console.WriteLine("sample host: Windows x64; target=net8.0; runtime=.NET 8.0.31; workload=100000 events");
+        Console.WriteLine("sample host: Windows x64; target=net8.0; runtime=.NET 8.0.31; workload=100000 events plus deterministic CPU reference");
         Console.WriteLine($"sample count: {CommittedSampleSet.Samples.Count}");
         foreach (var sample in CommittedSampleSet.Samples)
         {
-            Console.WriteLine($"sample {sample.Sample}: emit={sample.EmitMilliseconds:F2} ms; matching={sample.MatchingMilliseconds:F2} ms; sampled heap delta={sample.MemoryBytes:N0} bytes");
+            Console.WriteLine($"sample {sample.Sample}: reference={sample.ReferenceMilliseconds:F2} ms; emit={sample.EmitMilliseconds:F2} ms; matching={sample.MatchingMilliseconds:F2} ms; sampled heap delta={sample.MemoryBytes:N0} bytes");
         }
 
         PrintStatistics(statistics);
@@ -74,38 +76,30 @@ internal static class BenchmarkEvidence
             throw new InvalidOperationException("Benchmark provenance check failed:\n- " + string.Join("\n- ", failures));
         }
 
-        Console.WriteLine($"PASS benchmark threshold binding: live gate consumes emit {FormatMilliseconds(liveStatistics.EmitThresholdMilliseconds)} ms, matching {FormatMilliseconds(liveStatistics.MatchingThresholdMilliseconds)} ms, memory {liveStatistics.MemoryThresholdBytes:N0} bytes from the committed sample-set recomputation.");
-        Console.WriteLine($"PASS benchmark provenance: samples={sampleSet!.Samples.Count}; median=emit {statistics.EmitMedianMilliseconds:F2} ms, matching {statistics.MatchingMedianMilliseconds:F2} ms, memory {statistics.MemoryMedianBytes:N0} bytes; worst=emit {statistics.EmitWorstMilliseconds:F2} ms, matching {statistics.MatchingWorstMilliseconds:F2} ms, memory {statistics.MemoryWorstBytes:N0} bytes; thresholds=emit {FormatMilliseconds(statistics.EmitThresholdMilliseconds)} ms, matching {FormatMilliseconds(statistics.MatchingThresholdMilliseconds)} ms, memory {statistics.MemoryThresholdBytes:N0} bytes; rule={sampleSet.Rule.RuleId}; headroom={sampleSet.Rule.HeadroomPercent}%");
+        Console.WriteLine($"PASS benchmark threshold binding: live gate consumes normalized emit {FormatRatio(liveStatistics.EmitNormalizedThreshold)}, matching {FormatRatio(liveStatistics.MatchingNormalizedThreshold)}, memory {FormatRatio(liveStatistics.MemoryNormalizedThreshold)} ratio units from the committed sample-set recomputation.");
+        Console.WriteLine($"PASS benchmark provenance: samples={sampleSet!.Samples.Count}; normalized median=emit {FormatRatio(statistics.EmitNormalizedMedian)}, matching {FormatRatio(statistics.MatchingNormalizedMedian)}, memory {FormatRatio(statistics.MemoryNormalizedMedian)}; normalized worst=emit {FormatRatio(statistics.EmitNormalizedWorst)}, matching {FormatRatio(statistics.MatchingNormalizedWorst)}, memory {FormatRatio(statistics.MemoryNormalizedWorst)}; normalized thresholds=emit {FormatRatio(statistics.EmitNormalizedThreshold)}, matching {FormatRatio(statistics.MatchingNormalizedThreshold)}, memory {FormatRatio(statistics.MemoryNormalizedThreshold)}; rule={sampleSet.Rule.RuleId}; headroom={sampleSet.Rule.HeadroomPercent}%.");
     }
 
     private static void ValidateLiveThresholdBinding(BenchmarkStatistics liveStatistics, BenchmarkStatistics recomputedStatistics, List<string> failures)
     {
-        CompareThreshold("emit", liveStatistics.EmitThresholdMilliseconds, recomputedStatistics.EmitThresholdMilliseconds, failures);
-        CompareThreshold("matching", liveStatistics.MatchingThresholdMilliseconds, recomputedStatistics.MatchingThresholdMilliseconds, failures);
-        CompareThreshold("memory", liveStatistics.MemoryThresholdBytes, recomputedStatistics.MemoryThresholdBytes, failures);
+        CompareThreshold("normalized emit", liveStatistics.EmitNormalizedThreshold, recomputedStatistics.EmitNormalizedThreshold, failures);
+        CompareThreshold("normalized matching", liveStatistics.MatchingNormalizedThreshold, recomputedStatistics.MatchingNormalizedThreshold, failures);
+        CompareThreshold("normalized memory", liveStatistics.MemoryNormalizedThreshold, recomputedStatistics.MemoryNormalizedThreshold, failures);
     }
 
     private static void CompareThreshold(string name, double consumed, double recomputed, List<string> failures)
     {
         if (!NearlyEqual(consumed, recomputed))
         {
-            failures.Add($"live gate {name} threshold is {FormatMilliseconds(consumed)} ms, but recomputation from the committed sample set is {FormatMilliseconds(recomputed)} ms.");
-        }
-    }
-
-    private static void CompareThreshold(string name, long consumed, long recomputed, List<string> failures)
-    {
-        if (consumed != recomputed)
-        {
-            failures.Add($"live gate {name} threshold is {consumed:N0} bytes, but recomputation from the committed sample set is {recomputed:N0} bytes.");
+            failures.Add($"live gate {name} threshold is {FormatRatio(consumed)}, but recomputation from the committed sample set is {FormatRatio(recomputed)}.");
         }
     }
 
     private static void ValidateSampleSet(SampleSetDocument sampleSet, List<string> failures)
     {
-        if (!string.Equals(sampleSet.Schema, "benchmark-sample-set-v1", StringComparison.Ordinal))
+        if (!string.Equals(sampleSet.Schema, SupportedSchema, StringComparison.Ordinal))
         {
-            failures.Add($"sample set schema '{sampleSet.Schema}' is unsupported.");
+            failures.Add($"sample set schema '{sampleSet.Schema}' is unsupported; expected '{SupportedSchema}'.");
         }
 
         if (!string.Equals(sampleSet.Rule.RuleId, SupportedRuleId, StringComparison.Ordinal))
@@ -118,19 +112,14 @@ internal static class BenchmarkEvidence
             failures.Add($"headroom percent {sampleSet.Rule.HeadroomPercent} is outside the supported range.");
         }
 
-        if (sampleSet.Rule.TimeRoundingMilliseconds <= 0 || !double.IsFinite(sampleSet.Rule.TimeRoundingMilliseconds))
+        if (sampleSet.Rule.NormalizedRounding <= 0 || !double.IsFinite(sampleSet.Rule.NormalizedRounding))
         {
-            failures.Add("time rounding must be a positive finite value.");
+            failures.Add("normalized ratio rounding must be a positive finite value.");
         }
 
-        if (sampleSet.Rule.MemoryRoundingBytes <= 0)
+        if (sampleSet.Samples is null || sampleSet.Samples.Count != RequiredSampleCount)
         {
-            failures.Add("memory rounding must be positive.");
-        }
-
-        if (sampleSet.Samples is null || sampleSet.Samples.Count < 10)
-        {
-            failures.Add($"committed sample set has {sampleSet.Samples?.Count ?? 0} samples; at least ten are required.");
+            failures.Add($"committed sample set has {sampleSet.Samples?.Count ?? 0} samples; exactly {RequiredSampleCount} are required.");
             return;
         }
 
@@ -145,6 +134,11 @@ internal static class BenchmarkEvidence
             if (!double.IsFinite(sample.EmitMilliseconds) || sample.EmitMilliseconds < 0)
             {
                 failures.Add($"sample {index + 1} has an invalid emit measurement.");
+            }
+
+            if (!double.IsFinite(sample.ReferenceMilliseconds) || sample.ReferenceMilliseconds <= 0)
+            {
+                failures.Add($"sample {index + 1} has an invalid reference measurement.");
             }
 
             if (!double.IsFinite(sample.MatchingMilliseconds) || sample.MatchingMilliseconds < 0)
@@ -173,34 +167,36 @@ internal static class BenchmarkEvidence
             CompareMetadata(metadata, sampleSet.Rule, failures);
         }
 
-        var expectedFormula = $"threshold = ceiling(worst recorded sample × {1 + sampleSet.Rule.HeadroomPercent / 100d:0.##})";
+        var expectedFormula = $"threshold = ceiling(worst normalized sample × {1 + sampleSet.Rule.HeadroomPercent / 100d:0.##})";
         if (!policy.Contains(expectedFormula, StringComparison.Ordinal))
         {
             failures.Add($"policy rule text does not state the implemented formula '{expectedFormula}'.");
         }
 
-        var expectedRounding = $"Time thresholds round upward to the next {sampleSet.Rule.TimeRoundingMilliseconds.ToString("0.###", CultureInfo.InvariantCulture)} ms. Sampled heap-delta thresholds round upward to the next {sampleSet.Rule.MemoryRoundingBytes.ToString("N0", CultureInfo.InvariantCulture)} bytes. The {sampleSet.Rule.HeadroomPercent}% headroom is applied to the worst value, not to a single favorable observation and not to the current run.";
+        var expectedRounding = $"Normalized thresholds round upward to the next {sampleSet.Rule.NormalizedRounding.ToString("0.###", CultureInfo.InvariantCulture)} ratio unit. The {sampleSet.Rule.HeadroomPercent}% headroom is applied to the worst normalized value, not to a single favorable observation and not to the current run.";
         if (!policy.Contains(expectedRounding, StringComparison.Ordinal))
         {
             failures.Add("policy rounding or headroom statement does not match the committed rule.");
         }
 
-        var expectedRationale = $"The {sampleSet.Rule.HeadroomPercent}% headroom is a fixed design allowance: the observed spread across the ten samples is below 10% in every dimension, so it absorbs ordinary host scheduling noise while still failing a meaningful regression.";
+        var expectedRationale = $"The {sampleSet.Rule.HeadroomPercent}% headroom is a fixed design allowance applied after reference normalization: it is not recalibrated from the current run, and it leaves a closed margin for a meaningful normalized regression.";
         if (!policy.Contains(expectedRationale, StringComparison.Ordinal))
         {
             failures.Add("policy does not include the fixed headroom design rationale.");
         }
 
-        const string expectedEstimator = "The live `--performance` gate measures the current run at least five times in one process and takes the minimum emit, matching, and sampled-memory measurement for each dimension before comparing those minima with these derived thresholds. The minimum is a contention-resistant estimator: a transient scheduler interruption affects only an outlier attempt, while a real regression raises the minimum across attempts.";
+        const string expectedEstimator = "The live `--performance` gate measures a deterministic CPU reference workload and the product workload in the same process on every attempt, takes at least five attempts, and normalizes each product metric by that attempt's reference measurement before comparing the minimum normalized ratios with these derived thresholds. Raw absolute measurements remain visible as evidence; the closed normalized criterion reduces host-contention sensitivity without making the gate advisory.";
         if (!policy.Contains(expectedEstimator, StringComparison.Ordinal))
         {
             failures.Add("policy does not explain the repeated-attempt minimum estimator.");
         }
 
         ValidateSampleTable(sampleSet, policy, failures);
-        RequirePolicySummary(policy, $"- Median: emit `{statistics.EmitMedianMilliseconds:F2} ms`, matching `{statistics.MatchingMedianMilliseconds:F2} ms`, sampled heap delta `{statistics.MemoryMedianBytes:N0} bytes`.", "median", failures);
-        RequirePolicySummary(policy, $"- Worst: emit `{statistics.EmitWorstMilliseconds:F2} ms`, matching `{statistics.MatchingWorstMilliseconds:F2} ms`, sampled heap delta `{statistics.MemoryWorstBytes:N0} bytes`.", "worst", failures);
-        RequirePolicySummary(policy, $"- Derived thresholds: emit `{FormatMilliseconds(statistics.EmitThresholdMilliseconds)} ms`, matching `{FormatMilliseconds(statistics.MatchingThresholdMilliseconds)} ms`, sampled heap delta `{statistics.MemoryThresholdBytes:N0} bytes`.", "threshold", failures);
+        RequirePolicySummary(policy, $"- Median raw: reference `{statistics.ReferenceMedianMilliseconds:F2} ms`, emit `{statistics.EmitMedianMilliseconds:F2} ms`, matching `{statistics.MatchingMedianMilliseconds:F2} ms`, sampled heap delta `{statistics.MemoryMedianBytes:N0} bytes`.", "raw median", failures);
+        RequirePolicySummary(policy, $"- Median normalized: emit `{FormatRatio(statistics.EmitNormalizedMedian)}`, matching `{FormatRatio(statistics.MatchingNormalizedMedian)}`, sampled heap delta `{FormatRatio(statistics.MemoryNormalizedMedian)}` ratio units.", "normalized median", failures);
+        RequirePolicySummary(policy, $"- Worst raw: reference `{statistics.ReferenceWorstMilliseconds:F2} ms`, emit `{statistics.EmitWorstMilliseconds:F2} ms`, matching `{statistics.MatchingWorstMilliseconds:F2} ms`, sampled heap delta `{statistics.MemoryWorstBytes:N0} bytes`.", "raw worst", failures);
+        RequirePolicySummary(policy, $"- Worst normalized: emit `{FormatRatio(statistics.EmitNormalizedWorst)}`, matching `{FormatRatio(statistics.MatchingNormalizedWorst)}`, sampled heap delta `{FormatRatio(statistics.MemoryNormalizedWorst)}` ratio units.", "normalized worst", failures);
+        RequirePolicySummary(policy, $"- Derived normalized thresholds: emit `{FormatRatio(statistics.EmitNormalizedThreshold)}`, matching `{FormatRatio(statistics.MatchingNormalizedThreshold)}`, sampled heap delta `{FormatRatio(statistics.MemoryNormalizedThreshold)}` ratio units.", "threshold", failures);
 
         RequirePolicySummary(policy, "Earlier pre-release revisions of this probe set wrote threshold values directly (margin 75%, then 125%). Those hand-set values are superseded: thresholds are now derived from the committed sample set by the fixed rule, and a threshold or margin change requires a committed sample-set or policy change with the recompute check passing.", "provenance", failures);
     }
@@ -227,8 +223,7 @@ internal static class BenchmarkEvidence
     {
         CompareMetadataValue(metadata, "rule-id", rule.RuleId, failures);
         CompareMetadataValue(metadata, "headroom-percent", rule.HeadroomPercent.ToString(CultureInfo.InvariantCulture), failures);
-        CompareMetadataValue(metadata, "time-rounding-ms", rule.TimeRoundingMilliseconds.ToString("0.###", CultureInfo.InvariantCulture), failures);
-        CompareMetadataValue(metadata, "memory-rounding-bytes", rule.MemoryRoundingBytes.ToString(CultureInfo.InvariantCulture), failures);
+        CompareMetadataValue(metadata, "normalized-rounding", rule.NormalizedRounding.ToString("0.###", CultureInfo.InvariantCulture), failures);
     }
 
     private static void CompareMetadataValue(IReadOnlyDictionary<string, string> metadata, string key, string expected, List<string> failures)
@@ -245,7 +240,7 @@ internal static class BenchmarkEvidence
 
     private static void ValidateSampleTable(SampleSetDocument sampleSet, string policy, List<string> failures)
     {
-        var rows = Regex.Matches(policy, @"^\|\s*(?<sample>\d+)\s*\|\s*(?<emit>\d+(?:\.\d+)?)\s*\|\s*(?<matching>\d+(?:\.\d+)?)\s*\|\s*(?<memory>[\d,]+)\s*\|\s*$", RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        var rows = Regex.Matches(policy, @"^\|\s*(?<sample>\d+)\s*\|\s*(?<reference>\d+(?:\.\d+)?)\s*\|\s*(?<emit>\d+(?:\.\d+)?)\s*\|\s*(?<matching>\d+(?:\.\d+)?)\s*\|\s*(?<memory>[\d,]+)\s*\|\s*$", RegexOptions.Multiline | RegexOptions.CultureInvariant);
         if (rows.Count != sampleSet.Samples.Count)
         {
             failures.Add($"policy table contains {rows.Count} sample rows, but the committed sample set contains {sampleSet.Samples.Count}.");
@@ -259,6 +254,11 @@ internal static class BenchmarkEvidence
             if (!int.TryParse(row.Groups["sample"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sampleIndex) || sampleIndex != sample.Sample)
             {
                 failures.Add($"policy table sample index at row {index + 1} does not match the executable sample set.");
+            }
+
+            if (!double.TryParse(row.Groups["reference"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var reference) || !NearlyEqual(reference, sample.ReferenceMilliseconds))
+            {
+                failures.Add($"policy table reference value at sample {index + 1} does not match the executable sample set.");
             }
 
             if (!double.TryParse(row.Groups["emit"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var emit) || !NearlyEqual(emit, sample.EmitMilliseconds))
@@ -298,27 +298,42 @@ internal static class BenchmarkEvidence
 
     private static BenchmarkStatistics Calculate(SampleSetDocument sampleSet)
     {
+        var reference = sampleSet.Samples.Select(sample => sample.ReferenceMilliseconds).ToArray();
         var emit = sampleSet.Samples.Select(sample => sample.EmitMilliseconds).ToArray();
         var matching = sampleSet.Samples.Select(sample => sample.MatchingMilliseconds).ToArray();
         var memory = sampleSet.Samples.Select(sample => sample.MemoryBytes).ToArray();
+        var normalizedEmit = sampleSet.Samples.Select(sample => sample.EmitMilliseconds / sample.ReferenceMilliseconds).ToArray();
+        var normalizedMatching = sampleSet.Samples.Select(sample => sample.MatchingMilliseconds / sample.ReferenceMilliseconds).ToArray();
+        var normalizedMemory = sampleSet.Samples.Select(sample => sample.MemoryBytes / sample.ReferenceMilliseconds).ToArray();
+        var referenceWorst = reference.Max();
         var emitWorst = emit.Max();
         var matchingWorst = matching.Max();
         var memoryWorst = memory.Max();
+        var normalizedEmitWorst = normalizedEmit.Max();
+        var normalizedMatchingWorst = normalizedMatching.Max();
+        var normalizedMemoryWorst = normalizedMemory.Max();
         var margin = 1 + sampleSet.Rule.HeadroomPercent / 100d;
-        var emitThreshold = Math.Ceiling(emitWorst * margin / sampleSet.Rule.TimeRoundingMilliseconds) * sampleSet.Rule.TimeRoundingMilliseconds;
-        var matchingThreshold = Math.Ceiling(matchingWorst * margin / sampleSet.Rule.TimeRoundingMilliseconds) * sampleSet.Rule.TimeRoundingMilliseconds;
-        var memoryThreshold = checked((long)(Math.Ceiling(memoryWorst * margin / sampleSet.Rule.MemoryRoundingBytes) * sampleSet.Rule.MemoryRoundingBytes));
+        var emitThreshold = Math.Ceiling(normalizedEmitWorst * margin / sampleSet.Rule.NormalizedRounding) * sampleSet.Rule.NormalizedRounding;
+        var matchingThreshold = Math.Ceiling(normalizedMatchingWorst * margin / sampleSet.Rule.NormalizedRounding) * sampleSet.Rule.NormalizedRounding;
+        var memoryThreshold = Math.Ceiling(normalizedMemoryWorst * margin / sampleSet.Rule.NormalizedRounding) * sampleSet.Rule.NormalizedRounding;
         return new BenchmarkStatistics(
             sampleSet.Samples.Count,
             sampleSet.Rule.HeadroomPercent / 100d,
-            sampleSet.Rule.TimeRoundingMilliseconds,
-            sampleSet.Rule.MemoryRoundingBytes,
+            sampleSet.Rule.NormalizedRounding,
+            Median(reference),
             Median(emit),
             Median(matching),
             Median(memory),
+            Median(normalizedEmit),
+            Median(normalizedMatching),
+            Median(normalizedMemory),
+            referenceWorst,
             emitWorst,
             matchingWorst,
             memoryWorst,
+            normalizedEmitWorst,
+            normalizedMatchingWorst,
+            normalizedMemoryWorst,
             emitThreshold,
             matchingThreshold,
             memoryThreshold);
@@ -326,11 +341,15 @@ internal static class BenchmarkEvidence
 
     private static void PrintStatistics(BenchmarkStatistics statistics)
     {
-        Console.WriteLine($"sample median: emit={statistics.EmitMedianMilliseconds:F2} ms; matching={statistics.MatchingMedianMilliseconds:F2} ms; sampled heap delta={statistics.MemoryMedianBytes:N0} bytes");
-        Console.WriteLine($"sample worst: emit={statistics.EmitWorstMilliseconds:F2} ms; matching={statistics.MatchingWorstMilliseconds:F2} ms; sampled heap delta={statistics.MemoryWorstBytes:N0} bytes");
+        Console.WriteLine($"sample median raw: reference={statistics.ReferenceMedianMilliseconds:F2} ms; emit={statistics.EmitMedianMilliseconds:F2} ms; matching={statistics.MatchingMedianMilliseconds:F2} ms; sampled heap delta={statistics.MemoryMedianBytes:N0} bytes");
+        Console.WriteLine($"sample median normalized: emit={FormatRatio(statistics.EmitNormalizedMedian)}; matching={FormatRatio(statistics.MatchingNormalizedMedian)}; sampled heap delta={FormatRatio(statistics.MemoryNormalizedMedian)} ratio units");
+        Console.WriteLine($"sample worst raw: reference={statistics.ReferenceWorstMilliseconds:F2} ms; emit={statistics.EmitWorstMilliseconds:F2} ms; matching={statistics.MatchingWorstMilliseconds:F2} ms; sampled heap delta={statistics.MemoryWorstBytes:N0} bytes");
+        Console.WriteLine($"sample worst normalized: emit={FormatRatio(statistics.EmitNormalizedWorst)}; matching={FormatRatio(statistics.MatchingNormalizedWorst)}; sampled heap delta={FormatRatio(statistics.MemoryNormalizedWorst)} ratio units");
     }
 
     private static string FormatMilliseconds(double value) => value.ToString(value % 1 == 0 ? "0" : "0.##", CultureInfo.InvariantCulture);
+
+    private static string FormatRatio(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 
     private static bool NearlyEqual(double left, double right) => Math.Abs(left - right) <= 0.000001;
 
@@ -357,13 +376,13 @@ internal static class BenchmarkEvidence
     {
         public string RuleId { get; set; } = string.Empty;
         public int HeadroomPercent { get; set; }
-        public double TimeRoundingMilliseconds { get; set; }
-        public long MemoryRoundingBytes { get; set; }
+        public double NormalizedRounding { get; set; }
     }
 
     private sealed class BenchmarkSample
     {
         public int Sample { get; set; }
+        public double ReferenceMilliseconds { get; set; }
         public double EmitMilliseconds { get; set; }
         public double MatchingMilliseconds { get; set; }
         public long MemoryBytes { get; set; }
@@ -372,15 +391,22 @@ internal static class BenchmarkEvidence
     internal sealed record BenchmarkStatistics(
         int SampleCount,
         double HeadroomFraction,
-        double TimeRoundingMilliseconds,
-        long MemoryRoundingBytes,
+        double NormalizedRounding,
+        double ReferenceMedianMilliseconds,
         double EmitMedianMilliseconds,
         double MatchingMedianMilliseconds,
         long MemoryMedianBytes,
+        double EmitNormalizedMedian,
+        double MatchingNormalizedMedian,
+        double MemoryNormalizedMedian,
+        double ReferenceWorstMilliseconds,
         double EmitWorstMilliseconds,
         double MatchingWorstMilliseconds,
         long MemoryWorstBytes,
-        double EmitThresholdMilliseconds,
-        double MatchingThresholdMilliseconds,
-        long MemoryThresholdBytes);
+        double EmitNormalizedWorst,
+        double MatchingNormalizedWorst,
+        double MemoryNormalizedWorst,
+        double EmitNormalizedThreshold,
+        double MatchingNormalizedThreshold,
+        double MemoryNormalizedThreshold);
 }

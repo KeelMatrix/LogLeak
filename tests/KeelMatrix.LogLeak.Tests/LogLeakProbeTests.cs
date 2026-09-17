@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using KeelMatrix.LogLeak;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -331,6 +332,51 @@ public sealed partial class LogLeakProbeTests
         Assert.Equal(LogLeakVerificationStatus.Clean, result.Status);
         Assert.Equal(1, telemetry.ActivationCalls);
         Assert.Equal(1, telemetry.HeartbeatCalls);
+    }
+
+    [Fact]
+    public async Task Concurrent_capture_detects_planted_sentinel_without_exceptions_or_unbounded_findings()
+    {
+        const int taskCount = 12;
+        const int eventsPerTask = 4;
+        const string sentinel = "synthetic-concurrent-leak-6f2a";
+        var options = new LogLeakOptions(
+            maximumCapturedEvents: taskCount * eventsPerTask,
+            maximumFindings: taskCount * eventsPerTask,
+            maximumFindingsPerEvent: 2);
+        using var probe = new LogLeakProbe(options).AddSecret("batch", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("ConcurrencyTests");
+        var errors = new ConcurrentQueue<Exception>();
+
+        var tasks = Enumerable.Range(0, taskCount)
+            .Select(taskNumber => Task.Run(() =>
+            {
+                try
+                {
+                    for (var eventNumber = 0; eventNumber < eventsPerTask; eventNumber++)
+                    {
+                        logger.LogInformation("concurrent event {TaskNumber} {EventNumber}: " + sentinel, taskNumber, eventNumber);
+                    }
+                }
+                catch (Exception exception)
+                {
+                    errors.Enqueue(exception);
+                }
+            }))
+            .ToArray();
+
+        await Task.WhenAll(tasks);
+
+        Assert.Empty(errors);
+        var result = probe.Verify();
+        Assert.Equal(LogLeakVerificationStatus.LeaksDetected, result.Status);
+        Assert.InRange(result.Findings.Count, 1, options.MaximumFindings);
+        Assert.Equal(taskCount * eventsPerTask, result.CapturedEventCount);
+        Assert.All(result.Findings, finding => Assert.Equal(LogLeakLocation.FormattedMessage, finding.Location));
+
+        probe.Dispose();
+        Assert.Throws<LogLeakDisposedException>(() => probe.Verify());
     }
 
     private static ILoggerFactory CreateLoggerFactory(LogLeakProbe probe)

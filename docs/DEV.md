@@ -15,13 +15,13 @@ pwsh --version
 dotnet --version
 ```
 
-For local validation, set `KEELMATRIX_NO_TELEMETRY=1` in the current process. The package gate applies this setting to its consumer automatically.
+Repository validation sets `KEELMATRIX_NO_TELEMETRY=1` and `DOTNET_CLI_TELEMETRY_OPTOUT=1` for every spawned process. The focused test project also carries these values in `tests/KeelMatrix.LogLeak.Tests/LogLeak.Tests.runsettings`. The package gate applies the same settings to its consumer automatically.
 
 ## Restore and focused tests
 
 ```powershell
 dotnet restore LogLeak.Probe.sln --configfile NuGet.config --force
-dotnet test tests/KeelMatrix.LogLeak.Tests/KeelMatrix.LogLeak.Tests.csproj -c Release
+dotnet test tests/KeelMatrix.LogLeak.Tests/KeelMatrix.LogLeak.Tests.csproj -c Release --settings tests/KeelMatrix.LogLeak.Tests/LogLeak.Tests.runsettings
 ```
 
 ## Build, pack, inspect, and package smoke

@@ -11,7 +11,7 @@ app.MapGet("/health", (ILogger<Program> logger) =>
 {
     logger.LogInformation("health check completed");
     probe.AssertNoLeaks();
-    return Results.Ok();
+    return Results.Ok(new { status = "LogLeak clean" });
 });
 
 app.Run();
