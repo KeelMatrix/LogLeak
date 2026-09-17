@@ -2,7 +2,7 @@ using KeelMatrix.LogLeak;
 using Microsoft.Extensions.Logging;
 
 using var cleanProbe = new LogLeakProbe()
-    .AddSecret("consumer-secret", "synthetic-consumer-secret-12ab");
+    .AddSecret("probe-pass", "synthetic-consumer-secret-12ab");
 using (var cleanFactory = LoggerFactory.Create(builder => builder.AddProvider(cleanProbe.Provider)))
 {
     cleanFactory.CreateLogger("PackageConsumer").LogInformation("safe package event");
@@ -11,7 +11,7 @@ using (var cleanFactory = LoggerFactory.Create(builder => builder.AddProvider(cl
 
 const string plantedValue = "synthetic-consumer-planted-91de";
 using var plantedProbe = new LogLeakProbe()
-    .AddSecret("planted", plantedValue);
+    .AddSecret("leak", plantedValue);
 using (var plantedFactory = LoggerFactory.Create(builder => builder.AddProvider(plantedProbe.Provider)))
 {
     plantedFactory.CreateLogger("PackageConsumer").LogInformation("planted value {Value}", plantedValue);

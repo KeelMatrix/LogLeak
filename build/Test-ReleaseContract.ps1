@@ -155,7 +155,15 @@ $remediationPhrases = @(
     'replaces',
     'replacing',
     'revised',
-    'revising'
+    'revising',
+    'supersedes',
+    'superseded',
+    'overrides',
+    'rewritten',
+    'unlike the earlier',
+    'compared with the earlier',
+    'in contrast to the previous',
+    'rather than the prior'
 )
 
 $capabilityWording = @(
