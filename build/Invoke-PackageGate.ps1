@@ -10,6 +10,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$env:KEELMATRIX_NO_TELEMETRY = '1'
+$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+Write-Host 'validation telemetry: KEELMATRIX_NO_TELEMETRY=1; DOTNET_CLI_TELEMETRY_OPTOUT=1 (inherited by every child process)'
+
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -45,6 +49,7 @@ function Invoke-DotNet {
         if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
     }
     Write-Host ('dotnet ' + ($displayArguments -join ' '))
+    Write-Host 'child environment: KEELMATRIX_NO_TELEMETRY=1; DOTNET_CLI_TELEMETRY_OPTOUT=1'
 
     $previousEnvironment = @{}
     if ($null -ne $Environment) {
@@ -481,6 +486,7 @@ Console.WriteLine("Package consumer smoke passed.");
         NUGET_HTTP_CACHE_PATH = $httpCache
         DOTNET_CLI_HOME = $cliHome
         KEELMATRIX_NO_TELEMETRY = '1'
+        DOTNET_CLI_TELEMETRY_OPTOUT = '1'
     }
     Invoke-DotNet @(
         'run', '--project', $consumerProject,
@@ -491,6 +497,7 @@ Console.WriteLine("Package consumer smoke passed.");
         NUGET_HTTP_CACHE_PATH = $httpCache
         DOTNET_CLI_HOME = $cliHome
         KEELMATRIX_NO_TELEMETRY = '1'
+        DOTNET_CLI_TELEMETRY_OPTOUT = '1'
     }
 }
 

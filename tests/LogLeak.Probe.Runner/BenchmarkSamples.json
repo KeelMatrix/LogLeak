@@ -1,21 +1,20 @@
 {
-  "schema": "benchmark-sample-set-v1",
+  "schema": "benchmark-sample-set-v2",
   "rule": {
-    "ruleId": "worst-recorded-sample-plus-headroom-v1",
+    "ruleId": "worst-normalized-sample-plus-headroom-v2",
     "headroomPercent": 25,
-    "timeRoundingMilliseconds": 1,
-    "memoryRoundingBytes": 100000
+    "normalizedRounding": 0.01
   },
   "samples": [
-    { "sample": 1, "emitMilliseconds": 87.53, "matchingMilliseconds": 44.08, "memoryBytes": 8310816 },
-    { "sample": 2, "emitMilliseconds": 84.91, "matchingMilliseconds": 44.22, "memoryBytes": 8310816 },
-    { "sample": 3, "emitMilliseconds": 83.14, "matchingMilliseconds": 41.66, "memoryBytes": 8310816 },
-    { "sample": 4, "emitMilliseconds": 83.94, "matchingMilliseconds": 41.66, "memoryBytes": 8318904 },
-    { "sample": 5, "emitMilliseconds": 82.41, "matchingMilliseconds": 41.78, "memoryBytes": 8310760 },
-    { "sample": 6, "emitMilliseconds": 84.10, "matchingMilliseconds": 42.49, "memoryBytes": 8310760 },
-    { "sample": 7, "emitMilliseconds": 82.03, "matchingMilliseconds": 41.72, "memoryBytes": 8310760 },
-    { "sample": 8, "emitMilliseconds": 84.43, "matchingMilliseconds": 42.67, "memoryBytes": 8310760 },
-    { "sample": 9, "emitMilliseconds": 86.88, "matchingMilliseconds": 43.35, "memoryBytes": 8310816 },
-    { "sample": 10, "emitMilliseconds": 80.88, "matchingMilliseconds": 40.38, "memoryBytes": 8310760 }
+    { "sample": 1, "referenceMilliseconds": 27.74, "emitMilliseconds": 78.19, "matchingMilliseconds": 45.26, "memoryBytes": 8318896 },
+    { "sample": 2, "referenceMilliseconds": 27.31, "emitMilliseconds": 68.16, "matchingMilliseconds": 40.44, "memoryBytes": 8310736 },
+    { "sample": 3, "referenceMilliseconds": 25.86, "emitMilliseconds": 80.85, "matchingMilliseconds": 46.24, "memoryBytes": 8314352 },
+    { "sample": 4, "referenceMilliseconds": 26.53, "emitMilliseconds": 86.49, "matchingMilliseconds": 42.38, "memoryBytes": 8314352 },
+    { "sample": 5, "referenceMilliseconds": 26.46, "emitMilliseconds": 23.34, "matchingMilliseconds": 9.59, "memoryBytes": 8314352 },
+    { "sample": 6, "referenceMilliseconds": 26.11, "emitMilliseconds": 79.27, "matchingMilliseconds": 44.91, "memoryBytes": 8318896 },
+    { "sample": 7, "referenceMilliseconds": 25.92, "emitMilliseconds": 70.87, "matchingMilliseconds": 41.33, "memoryBytes": 8310736 },
+    { "sample": 8, "referenceMilliseconds": 25.86, "emitMilliseconds": 69.46, "matchingMilliseconds": 40.40, "memoryBytes": 8314352 },
+    { "sample": 9, "referenceMilliseconds": 25.81, "emitMilliseconds": 90.54, "matchingMilliseconds": 50.04, "memoryBytes": 8314352 },
+    { "sample": 10, "referenceMilliseconds": 25.79, "emitMilliseconds": 82.99, "matchingMilliseconds": 45.53, "memoryBytes": 8314352 }
   ]
 }
