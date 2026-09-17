@@ -234,8 +234,8 @@ function Assert-FirstReleaseEntry {
     # verb stems intentionally cover normal inflections and near-synonyms rather
     # than maintaining a fragile allowlist of complete phrases.
     $remediationRules = @(
-        [pscustomobject]@{ Name = 'transition verb'; Pattern = '\b(?:fix\w*|correct\w*|resol\w*|address\w*|rectif\w*|replac\w*|revis\w*)\b' },
-        [pscustomobject]@{ Name = 'transition comparison'; Pattern = '\b(?:no\s+longer|not\s+yet\s+published|previously|formerly|used\s+to|this\s+removes|this\s+fixes|changed\s+from)\b' },
+        [pscustomobject]@{ Name = 'transition verb'; Pattern = '\b(?:fix\w*|correct\w*|resol\w*|address\w*|rectif\w*|replac\w*|revis\w*|supersede\w*|supersed\w*|override\w*|rewrit\w*)\b' },
+        [pscustomobject]@{ Name = 'transition comparison'; Pattern = '\b(?:no\s+longer|not\s+yet\s+published|previously|formerly|used\s+to|this\s+removes|this\s+fixes|changed\s+from|unlike\s+(?:the\s+)?(?:earlier|previous|prior)|compared\s+(?:with|to)\s+(?:the\s+)?(?:earlier|previous|prior)|in\s+contrast\s+to\s+(?:the\s+)?(?:earlier|previous|prior)|rather\s+than\s+(?:the\s+)?(?:earlier|previous|prior))\b' },
         [pscustomobject]@{ Name = 'present transition'; Pattern = '\bnow\b' }
     )
     foreach ($rule in $remediationRules) {

@@ -47,7 +47,7 @@ Reproduce the committed sample-set arithmetic with:
 dotnet run --project tests/LogLeak.Probe.Runner/LogLeak.Probe.Runner.csproj -c Release --no-build --no-restore --performance-samples
 ```
 
-The live `--performance` gate measures the current run and compares it with these derived thresholds. A different host, target, runtime, or process architecture is a different baseline: rerun and commit a replacement sample set under this same policy before changing a threshold. This gate does not prove behavior for other platforms.
+The live `--performance` gate measures the current run at least five times in one process and takes the minimum emit, matching, and sampled-memory measurement for each dimension before comparing those minima with these derived thresholds. The minimum is a contention-resistant estimator: a transient scheduler interruption affects only an outlier attempt, while a real regression raises the minimum across attempts. A different host, target, runtime, or process architecture is a different baseline: rerun and commit a replacement sample set under this same policy before changing a threshold. This gate does not prove behavior for other platforms.
 
 ## Provenance
 

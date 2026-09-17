@@ -33,7 +33,7 @@ probe.AssertNoLeaks();
 
 When a registered value is found, `LogLeakAssertionException` reports its label, broad location, and safe logging metadata. The value, complete message, exception payload, and surrounding state are never retained in a finding or assertion message.
 
-Registration labels are safe identifiers limited to 64 characters using letters, digits, `-`, `_`, `.`, and `:`. A registered value may not appear in a label, including a label from another registration.
+Registration labels are safe identifiers limited to 64 characters using letters, digits, `-`, `_`, `.`, and `:`. No registered label may textually contain a registered value, and no registered value may textually contain a registered label. The rule uses exact ordinal comparison (case-sensitive, with no normalization) and is checked at every registration in either order.
 
 ## Supported boundary fields
 

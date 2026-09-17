@@ -34,7 +34,7 @@ probe.AssertNoLeaks();
 
 Use synthetic values created only for tests. A planted value produces a safe `LogLeakAssertionException` containing the registration label, broad leak location, and safe logging metadata. The value, complete message, exception payload, and surrounding state are never included.
 
-Registration labels are safe identifiers limited to 64 characters using letters, digits, `-`, `_`, `.`, and `:`. A registered value may not appear in a label, including a label from another registration.
+Registration labels are safe identifiers limited to 64 characters using letters, digits, `-`, `_`, `.`, and `:`. No registered label may textually contain a registered value, and no registered value may textually contain a registered label. The rule uses exact ordinal comparison (case-sensitive, with no normalization) and is checked at every registration in either order.
 
 ## Documentation
 

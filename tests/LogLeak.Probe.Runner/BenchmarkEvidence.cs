@@ -191,6 +191,12 @@ internal static class BenchmarkEvidence
             failures.Add("policy does not include the fixed headroom design rationale.");
         }
 
+        const string expectedEstimator = "The live `--performance` gate measures the current run at least five times in one process and takes the minimum emit, matching, and sampled-memory measurement for each dimension before comparing those minima with these derived thresholds. The minimum is a contention-resistant estimator: a transient scheduler interruption affects only an outlier attempt, while a real regression raises the minimum across attempts.";
+        if (!policy.Contains(expectedEstimator, StringComparison.Ordinal))
+        {
+            failures.Add("policy does not explain the repeated-attempt minimum estimator.");
+        }
+
         ValidateSampleTable(sampleSet, policy, failures);
         RequirePolicySummary(policy, $"- Median: emit `{statistics.EmitMedianMilliseconds:F2} ms`, matching `{statistics.MatchingMedianMilliseconds:F2} ms`, sampled heap delta `{statistics.MemoryMedianBytes:N0} bytes`.", "median", failures);
         RequirePolicySummary(policy, $"- Worst: emit `{statistics.EmitWorstMilliseconds:F2} ms`, matching `{statistics.MatchingWorstMilliseconds:F2} ms`, sampled heap delta `{statistics.MemoryWorstBytes:N0} bytes`.", "worst", failures);

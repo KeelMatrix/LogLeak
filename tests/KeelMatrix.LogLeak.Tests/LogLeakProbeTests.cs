@@ -11,7 +11,7 @@ public sealed partial class LogLeakProbeTests
     public void Detects_formatted_template_and_source_generated_messages()
     {
         const string sentinel = "synthetic-message-7f4b";
-        using var probe = new LogLeakProbe().AddSecret("message", sentinel);
+        using var probe = new LogLeakProbe().AddSecret("formatted", sentinel);
         using var loggerFactory = CreateLoggerFactory(probe);
         var logger = loggerFactory.CreateLogger("PaymentClient");
 
@@ -52,7 +52,7 @@ public sealed partial class LogLeakProbeTests
     public void Detects_nested_scope_string_state()
     {
         const string sentinel = "synthetic-scope-a1d9";
-        using var probe = new LogLeakProbe().AddSecret("scope", sentinel);
+        using var probe = new LogLeakProbe().AddSecret("context", sentinel);
         using var loggerFactory = CreateLoggerFactory(probe);
         var logger = loggerFactory.CreateLogger("PaymentClient");
 
@@ -70,7 +70,7 @@ public sealed partial class LogLeakProbeTests
     public void Scope_opened_before_provider_registration_is_outside_observed_boundary()
     {
         const string sentinel = "synthetic-pre-registration-scope-1a2b";
-        using var probe = new LogLeakProbe().AddSecret("scope", sentinel);
+        using var probe = new LogLeakProbe().AddSecret("boundary", sentinel);
         using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(NullLoggerProvider.Instance));
         var logger = loggerFactory.CreateLogger("PaymentClient");
 
@@ -87,7 +87,7 @@ public sealed partial class LogLeakProbeTests
     public void Detects_exception_representation()
     {
         const string sentinel = "synthetic-exception-c34e";
-        using var probe = new LogLeakProbe().AddSecret("exception", sentinel);
+        using var probe = new LogLeakProbe().AddSecret("thrown", sentinel);
         using var loggerFactory = CreateLoggerFactory(probe);
         var logger = loggerFactory.CreateLogger("PaymentClient");
 
@@ -143,7 +143,7 @@ public sealed partial class LogLeakProbeTests
     {
         const string sentinel = "synthetic-diagnostic-5b7c";
         var telemetry = new RecordingTelemetry();
-        using var probe = new LogLeakProbe(null, telemetry).AddSecret("diagnostic", sentinel);
+        using var probe = new LogLeakProbe(null, telemetry).AddSecret("finding", sentinel);
         using var loggerFactory = CreateLoggerFactory(probe);
         var logger = loggerFactory.CreateLogger("Category-" + sentinel);
         logger.LogInformation("message " + sentinel);
@@ -186,7 +186,7 @@ public sealed partial class LogLeakProbeTests
     {
         const string sentinel = "synthetic-overflow-91c2";
         var options = new LogLeakOptions(maximumCapturedEvents: 1);
-        using var probe = new LogLeakProbe(options).AddSecret("overflow", sentinel);
+        using var probe = new LogLeakProbe(options).AddSecret("capture", sentinel);
         using var loggerFactory = CreateLoggerFactory(probe);
         var logger = loggerFactory.CreateLogger("OverflowTests");
 
@@ -206,7 +206,7 @@ public sealed partial class LogLeakProbeTests
     {
         const string sentinel = "synthetic-payload-61de";
         var options = new LogLeakOptions(maximumPayloadCharacters: 32);
-        using var probe = new LogLeakProbe(options).AddSecret("payload", sentinel);
+        using var probe = new LogLeakProbe(options).AddSecret("unit", sentinel);
         using var loggerFactory = CreateLoggerFactory(probe);
         var logger = loggerFactory.CreateLogger("OverflowTests");
 
@@ -218,7 +218,7 @@ public sealed partial class LogLeakProbeTests
     [Fact]
     public void Disposal_clears_state_and_makes_operations_fail_deterministically()
     {
-        var probe = new LogLeakProbe().AddSecret("dispose", "synthetic-dispose-77a2");
+        var probe = new LogLeakProbe().AddSecret("lifecycle", "synthetic-dispose-77a2");
 
         probe.Dispose();
         probe.Dispose();
@@ -253,18 +253,35 @@ public sealed partial class LogLeakProbeTests
     {
         const string firstValue = "synthetic-first-collision-3c4d";
         const string secondValue = "synthetic-second-collision-5e6f";
-        const string safeFirstValue = "safe-first-value-7a8b";
-        using var valueFirst = new LogLeakProbe().AddSecret("first", firstValue);
+        const string safeInitialValue = "safe-initial-value-7a8b";
+        using var valueFirst = new LogLeakProbe().AddSecret("alpha", firstValue);
         var valueFirstException = Assert.Throws<LogLeakConfigurationException>(() => valueFirst.AddSecret(firstValue, secondValue));
 
-        using var labelFirst = new LogLeakProbe().AddSecret("second-" + secondValue, safeFirstValue);
+        using var labelFirst = new LogLeakProbe().AddSecret("second-" + secondValue, safeInitialValue);
         var labelFirstException = Assert.Throws<LogLeakConfigurationException>(() => labelFirst.AddSecret("first", secondValue));
 
         Assert.DoesNotContain(firstValue, valueFirstException.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(secondValue, valueFirstException.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(firstValue, labelFirstException.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(secondValue, labelFirstException.Message, StringComparison.Ordinal);
-        Assert.DoesNotContain(safeFirstValue, labelFirstException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(safeInitialValue, labelFirstException.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Registration_rejects_reverse_containment_in_either_registration_order()
+    {
+        using var newValueContainsExistingLabel = new LogLeakProbe().AddSecret("existing-label", "synthetic-first-value-2a3b");
+        var newValueException = Assert.Throws<LogLeakConfigurationException>(() =>
+            newValueContainsExistingLabel.AddSecret("new-label", "existing-label-suffix"));
+
+        using var existingValueContainsNewLabel = new LogLeakProbe().AddSecret("first-label", "prefix-new-label-suffix");
+        var existingValueException = Assert.Throws<LogLeakConfigurationException>(() =>
+            existingValueContainsNewLabel.AddSecret("new-label", "synthetic-second-value-4c5d"));
+
+        Assert.DoesNotContain("existing-label", newValueException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("existing-label-suffix", newValueException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("first-label", existingValueException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("prefix-new-label-suffix", existingValueException.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -272,8 +289,8 @@ public sealed partial class LogLeakProbeTests
     {
         const string firstValue = "synthetic-first-value-9c0d";
         const string secondValue = "synthetic-second-value-1e2f";
-        using var probe = new LogLeakProbe().AddSecret("first", firstValue);
-        probe.AddSecret("second", secondValue);
+        using var probe = new LogLeakProbe().AddSecret("alpha", firstValue);
+        probe.AddSecret("beta", secondValue);
 
         var selfException = Assert.Throws<LogLeakConfigurationException>(() => probe.AddSecret("self-" + firstValue, "safe-self-value-3a4b"));
         var equalException = Assert.Throws<LogLeakConfigurationException>(() => probe.AddSecret("equal-label", "equal-label"));
@@ -295,7 +312,7 @@ public sealed partial class LogLeakProbeTests
         var collision = Assert.Throws<LogLeakConfigurationException>(() => probe.AddSecret("label-" + registeredValue, "safe-rejected-value-9f0a"));
         Assert.DoesNotContain(registeredValue, collision.Message, StringComparison.Ordinal);
 
-        probe.AddSecret("valid", "synthetic-valid-after-rejection-1b2c");
+        probe.AddSecret("survivor", "synthetic-valid-after-rejection-1b2c");
         var laterCollision = Assert.Throws<LogLeakConfigurationException>(() => probe.AddSecret("later-" + registeredValue, "safe-later-value-3d4e"));
         Assert.DoesNotContain(registeredValue, laterCollision.Message, StringComparison.Ordinal);
     }
@@ -305,7 +322,7 @@ public sealed partial class LogLeakProbeTests
     {
         const string sentinel = "synthetic-telemetry-2f1a";
         var telemetry = new ThrowingTelemetry();
-        using var probe = new LogLeakProbe(null, telemetry).AddSecret("telemetry", sentinel);
+        using var probe = new LogLeakProbe(null, telemetry).AddSecret("run", sentinel);
         using var loggerFactory = CreateLoggerFactory(probe);
         loggerFactory.CreateLogger("TelemetryTests").LogInformation("safe event");
 

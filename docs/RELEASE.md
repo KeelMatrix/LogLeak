@@ -9,7 +9,8 @@ This repository publishes `KeelMatrix.LogLeak` from an exact semantic-version ta
 3. Run the repository-controlled contract check with the intended tag and date. The date is required and must match the date of the exact commit that will be tagged:
 
    ```powershell
-   pwsh ./build/Validate-ReleaseContract.ps1 -Version 0.1.0 -Tag v0.1.0 -ExpectedReleaseDate 2026-09-16
+   # Replace <exact-commit-date> with the YYYY-MM-DD date of the exact commit being tagged.
+   pwsh ./build/Validate-ReleaseContract.ps1 -Version 0.1.0 -Tag v0.1.0 -ExpectedReleaseDate <exact-commit-date>
    ```
 
    The check verifies the finalized changelog entry, package version, tag, exact dependency versions, install examples, release date, and first-release wording. It fails closed on a planned or unreleased entry, a metadata mismatch, or remediation-history wording.
