@@ -1,5 +1,6 @@
 using KeelMatrix.LogLeak;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace KeelMatrix.LogLeak.Tests;
@@ -63,6 +64,23 @@ public sealed partial class LogLeakProbeTests
 
         var finding = Assert.Single(probe.Verify().Findings);
         Assert.Equal(LogLeakLocation.Scope, finding.Location);
+    }
+
+    [Fact]
+    public void Scope_opened_before_provider_registration_is_outside_observed_boundary()
+    {
+        const string sentinel = "synthetic-pre-registration-scope-1a2b";
+        using var probe = new LogLeakProbe().AddSecret("scope", sentinel);
+        using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(NullLoggerProvider.Instance));
+        var logger = loggerFactory.CreateLogger("PaymentClient");
+
+        using (logger.BeginScope("scope opened before provider " + sentinel))
+        {
+            loggerFactory.AddProvider(probe.Provider);
+            loggerFactory.CreateLogger("PaymentClient").LogInformation("safe event");
+        }
+
+        Assert.Equal(LogLeakVerificationStatus.Clean, probe.Verify().Status);
     }
 
     [Fact]
@@ -225,7 +243,61 @@ public sealed partial class LogLeakProbeTests
         loggerFactory.CreateLogger("RegistrationTests").LogInformation("synthetic-duplicate-b48f");
 
         var labels = probe.Verify().Findings.Select(static finding => finding.SentinelLabel).ToArray();
-        Assert.Equal(new[] { "first", "second" }, labels);
+        Assert.Equal(2, labels.Length);
+        Assert.Equal("first", labels[0]);
+        Assert.Equal("second", labels[1]);
+    }
+
+    [Fact]
+    public void Registration_rejects_label_value_collisions_in_either_order_without_echoing_values()
+    {
+        const string firstValue = "synthetic-first-collision-3c4d";
+        const string secondValue = "synthetic-second-collision-5e6f";
+        const string safeFirstValue = "safe-first-value-7a8b";
+        using var valueFirst = new LogLeakProbe().AddSecret("first", firstValue);
+        var valueFirstException = Assert.Throws<LogLeakConfigurationException>(() => valueFirst.AddSecret(firstValue, secondValue));
+
+        using var labelFirst = new LogLeakProbe().AddSecret("second-" + secondValue, safeFirstValue);
+        var labelFirstException = Assert.Throws<LogLeakConfigurationException>(() => labelFirst.AddSecret("first", secondValue));
+
+        Assert.DoesNotContain(firstValue, valueFirstException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(secondValue, valueFirstException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(firstValue, labelFirstException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(secondValue, labelFirstException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(safeFirstValue, labelFirstException.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Registration_rejects_self_and_multiple_registered_value_collisions_without_echoing_labels()
+    {
+        const string firstValue = "synthetic-first-value-9c0d";
+        const string secondValue = "synthetic-second-value-1e2f";
+        using var probe = new LogLeakProbe().AddSecret("first", firstValue);
+        probe.AddSecret("second", secondValue);
+
+        var selfException = Assert.Throws<LogLeakConfigurationException>(() => probe.AddSecret("self-" + firstValue, "safe-self-value-3a4b"));
+        var equalException = Assert.Throws<LogLeakConfigurationException>(() => probe.AddSecret("equal-label", "equal-label"));
+        var multipleException = Assert.Throws<LogLeakConfigurationException>(() => probe.AddSecret(firstValue + "-" + secondValue, "safe-multiple-value-5c6d"));
+
+        Assert.DoesNotContain(firstValue, selfException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(secondValue, selfException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("equal-label", equalException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(firstValue, multipleException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(secondValue, multipleException.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Failed_registration_does_not_poison_later_valid_registration_or_reopen_collision()
+    {
+        const string registeredValue = "synthetic-mid-sequence-7d8e";
+        using var probe = new LogLeakProbe().AddSecret("registered", registeredValue);
+
+        var collision = Assert.Throws<LogLeakConfigurationException>(() => probe.AddSecret("label-" + registeredValue, "safe-rejected-value-9f0a"));
+        Assert.DoesNotContain(registeredValue, collision.Message, StringComparison.Ordinal);
+
+        probe.AddSecret("valid", "synthetic-valid-after-rejection-1b2c");
+        var laterCollision = Assert.Throws<LogLeakConfigurationException>(() => probe.AddSecret("later-" + registeredValue, "safe-later-value-3d4e"));
+        Assert.DoesNotContain(registeredValue, laterCollision.Message, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -15,5 +15,6 @@
     <ProjectReference Include="../LogLeak.Probe.AspNetApp/LogLeak.Probe.AspNetApp.csproj" />
     <ProjectReference Include="../LogLeak.Probe.Serilog/LogLeak.Probe.Serilog.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 </Project>

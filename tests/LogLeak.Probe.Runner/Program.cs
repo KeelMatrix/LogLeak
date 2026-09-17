@@ -694,7 +694,7 @@ internal static class Program
     private static void PrintGoGate()
     {
         var statistics = BenchmarkEvidence.CommittedStatistics;
-        Console.WriteLine("PROBE GO-GATE RECORD");
+        Console.WriteLine("RETAINED PROBE SUMMARY");
         Console.WriteLine("100% recall in every declared supported field: PASS - each four-field fixture reports a label and broad location.");
         Console.WriteLine("Zero deterministic false positives without the sentinel: PASS - redaction corpus and 100,000-event absent corpus produced no findings.");
         Console.WriteLine("Zero sentinel text/bytes in probe-owned diagnostics and simulated output paths: PASS - all four supported leak locations audited in memory and on-disk artifact bytes.");
@@ -703,8 +703,8 @@ internal static class Program
         Console.WriteLine($"Resource limits: PASS - event capture, {MaximumInspectionUnitsPerEvent} inspection units/event, {MaximumFindingsPerEvent} findings/event, a {MaximumTransientAllocationBytes:N0}-byte transient-allocation guard/event, and {MaximumPayloadCharacters}-character text units are guarded; overflow is explicit inconclusive.");
         Console.WriteLine("Supported/excluded field contract: PASS - {OriginalFormat} is excluded metadata and recorded excluded-field fixtures match the classifier output.");
         Console.WriteLine($"Benchmark overhead acceptable: PASS - fixed thresholds derive mechanically from the committed {statistics.SampleCount}-sample host baseline with {statistics.HeadroomFraction:P0} headroom; emit, matching, and sampled-memory verdicts are printed above.");
-        Console.WriteLine("Diagnostic claim: PASS within probe-owned and simulated output paths; consumer tests cover the shipping assertion and telemetry contract separately.");
-        Console.WriteLine("Recommendation: continue only as a narrowly scoped product design/review decision after independent review of this evidence; do not treat this probe as a shipping implementation.");
+        Console.WriteLine("Diagnostic coverage: PASS within probe-owned and simulated output paths; consumer tests cover assertion and telemetry behavior separately.");
+        Console.WriteLine("The retained corpus is a technical feasibility check; consumer contract tests validate package behavior.");
     }
 
     private static BoundaryProbe NewProbe(int maximumEvents, int maximumSentinels = 128, int maximumFindings = MaximumFindingsTotal, int maximumPayloadCharacters = MaximumPayloadCharacters, int maximumInspectionUnitsPerEvent = MaximumInspectionUnitsPerEvent, int maximumFindingsPerEvent = MaximumFindingsPerEvent, long maximumTransientAllocationBytes = MaximumTransientAllocationBytes) => new(new CaptureOptions(maximumEvents, maximumSentinels, maximumFindings, maximumPayloadCharacters: maximumPayloadCharacters, maximumInspectionUnitsPerEvent: maximumInspectionUnitsPerEvent, maximumFindingsPerEvent: maximumFindingsPerEvent, maximumTransientAllocationBytes: maximumTransientAllocationBytes));

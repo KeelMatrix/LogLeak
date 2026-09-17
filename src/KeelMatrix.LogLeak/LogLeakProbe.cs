@@ -49,7 +49,10 @@ public sealed class LogLeakProbe : IDisposable
     /// <summary>
     /// Gets the provider to add through normal <see cref="ILoggingBuilder"/> registration.
     /// </summary>
-    /// <remarks>Disposing the provider also disposes this probe and clears retained state.</remarks>
+    /// <remarks>
+    /// Register this provider before opening scopes that the probe should observe. Scopes opened earlier are outside the
+    /// provider's observed boundary and may not be captured. Disposing the provider also disposes this probe and clears retained state.
+    /// </remarks>
     public ILoggerProvider Provider => provider;
 
     /// <summary>
@@ -58,6 +61,7 @@ public sealed class LogLeakProbe : IDisposable
     /// <param name="label">A short safe identifier used in findings.</param>
     /// <param name="value">The exact non-empty value to match in supported logging fields.</param>
     /// <returns>This probe, to support concise setup.</returns>
+    /// <remarks>Labels are limited to 64 characters and may contain letters, digits, hyphens, underscores, periods, and colons.</remarks>
     /// <exception cref="LogLeakConfigurationException">Thrown when the label or value is invalid.</exception>
     /// <exception cref="LogLeakDisposedException">Thrown when the probe has been disposed.</exception>
     public LogLeakProbe AddSecret(string label, string value)
@@ -68,11 +72,6 @@ public sealed class LogLeakProbe : IDisposable
         if (value.Length > options.MaximumSentinelCharacters)
         {
             throw new LogLeakConfigurationException("The sentinel value exceeds the configured registration limit.");
-        }
-
-        if (ContainsOrdinal(label, value))
-        {
-            throw new LogLeakConfigurationException("A sentinel label must not contain its sentinel value.");
         }
 
         lock (gate)
@@ -86,6 +85,12 @@ public sealed class LogLeakProbe : IDisposable
             if (sentinels.Any(existing => string.Equals(existing.Label, label, StringComparison.Ordinal)))
             {
                 throw new LogLeakConfigurationException("Sentinel labels must be unique.");
+            }
+
+            if (ContainsOrdinal(label, value)
+                || sentinels.Any(existing => ContainsOrdinal(label, existing.Value) || ContainsOrdinal(existing.Label, value)))
+            {
+                throw new LogLeakConfigurationException("Sentinel labels and values must not overlap.");
             }
 
             sentinels.Add(new RegisteredSentinel(label, value));
