@@ -8,4 +8,4 @@ From the repository root:
 pwsh ./build/Invoke-PackageGate.ps1 -Stage All
 ```
 
-The consumer smoke uses a temporary package cache and maps `KeelMatrix.LogLeak` only to the local feed. Local validation disables telemetry with `KEELMATRIX_NO_TELEMETRY=1` and `DOTNET_CLI_TELEMETRY_OPTOUT=1`.
+The focused test project loads its committed telemetry-isolating runsettings automatically. The consumer smoke uses a temporary package cache and maps `KeelMatrix.LogLeak` only to the local feed. Package validation disables telemetry with `KEELMATRIX_NO_TELEMETRY=1` and `DOTNET_CLI_TELEMETRY_OPTOUT=1`.

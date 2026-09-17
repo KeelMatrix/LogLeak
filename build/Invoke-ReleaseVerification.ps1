@@ -44,7 +44,7 @@ if (-not [string]::IsNullOrWhiteSpace($Version)) {
 
 Invoke-DotNet @('restore', $solutionPath, '--configfile', $configPath, '--no-cache', '--force')
 Invoke-DotNet (@('build', $solutionPath, '--configuration', $Configuration, '--no-restore') + $versionArguments)
-Invoke-DotNet @('test', $focusedTests, '--configuration', $Configuration, '--no-build', '--no-restore', '--settings', (Join-Path $root 'tests/KeelMatrix.LogLeak.Tests/LogLeak.Tests.runsettings'))
+Invoke-DotNet @('test', $focusedTests, '--configuration', $Configuration, '--no-build', '--no-restore')
 Invoke-DotNet @('run', '--project', $probeProject, '--configuration', $Configuration, '--no-build', '--no-restore')
 Invoke-DotNet @('format', 'whitespace', $solutionPath, '--verify-no-changes', '--no-restore')
 Invoke-DotNet @('format', 'analyzers', $shippingProject, '--verify-no-changes', '--no-restore', '--severity', 'error')
