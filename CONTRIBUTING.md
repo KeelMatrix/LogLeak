@@ -21,7 +21,7 @@ pwsh ./build/Invoke-PackageGate.ps1 -Stage All
 dotnet format whitespace LogLeak.Probe.sln --verify-no-changes --no-restore
 ```
 
-The package gate uses a fresh consumer directory and disables telemetry for local validation. See [docs/DEV.md](docs/DEV.md) for individual build, pack, inspection, smoke, and API-analysis commands.
+The focused test project loads its committed telemetry-isolating runsettings automatically. The package gate uses a fresh consumer directory and disables telemetry for local validation. See [docs/DEV.md](docs/DEV.md) for individual build, pack, inspection, smoke, and API-analysis commands.
 
 ## Public API changes
 

@@ -652,13 +652,13 @@ internal static class Program
             Console.WriteLine($"benchmark attempt {attempt}: reference={measurement.ReferenceMilliseconds:F2} ms; emit={measurement.EmitMilliseconds:F2} ms; matching={measurement.MatchingMilliseconds:F2} ms; sampled heap delta={measurement.RetainedBytes:N0} bytes; normalized emit={measurement.EmitMilliseconds / measurement.ReferenceMilliseconds:F2}; normalized matching={measurement.MatchingMilliseconds / measurement.ReferenceMilliseconds:F2}; normalized memory={measurement.RetainedBytes / measurement.ReferenceMilliseconds:F2}");
         }
 
-        var emitElapsed = attempts.Min(measurement => measurement.EmitMilliseconds);
-        var matchingElapsed = attempts.Min(measurement => measurement.MatchingMilliseconds);
-        var retained = attempts.Min(measurement => measurement.RetainedBytes);
-        var referenceElapsed = attempts.Min(measurement => measurement.ReferenceMilliseconds);
-        var normalizedEmit = attempts.Min(measurement => measurement.EmitMilliseconds / measurement.ReferenceMilliseconds);
-        var normalizedMatching = attempts.Min(measurement => measurement.MatchingMilliseconds / measurement.ReferenceMilliseconds);
-        var normalizedMemory = attempts.Min(measurement => measurement.RetainedBytes / measurement.ReferenceMilliseconds);
+        var emitElapsed = Median(attempts.Select(static measurement => measurement.EmitMilliseconds).ToArray());
+        var matchingElapsed = Median(attempts.Select(static measurement => measurement.MatchingMilliseconds).ToArray());
+        var retained = Median(attempts.Select(static measurement => measurement.RetainedBytes).ToArray());
+        var referenceElapsed = Median(attempts.Select(static measurement => measurement.ReferenceMilliseconds).ToArray());
+        var normalizedEmit = Median(attempts.Select(static measurement => measurement.EmitMilliseconds / measurement.ReferenceMilliseconds).ToArray());
+        var normalizedMatching = Median(attempts.Select(static measurement => measurement.MatchingMilliseconds / measurement.ReferenceMilliseconds).ToArray());
+        var normalizedMemory = Median(attempts.Select(static measurement => measurement.RetainedBytes / measurement.ReferenceMilliseconds).ToArray());
         var emitPass = normalizedEmit <= statistics.EmitNormalizedThreshold;
         var matchingPass = normalizedMatching <= statistics.MatchingNormalizedThreshold;
         var memoryPass = normalizedMemory <= statistics.MemoryNormalizedThreshold;
@@ -667,16 +667,17 @@ internal static class Program
         Console.WriteLine($"benchmark policy: threshold = ceiling(worst normalized sample x (1 + {statistics.HeadroomFraction:P0})), rounded to the next {statistics.NormalizedRounding:0.##} ratio unit; fixed before this measured gate run.");
         Console.WriteLine($"benchmark sample basis: committed sample set; samples={statistics.SampleCount}; median raw reference={statistics.ReferenceMedianMilliseconds:F2} ms, emit={statistics.EmitMedianMilliseconds:F2} ms, matching={statistics.MatchingMedianMilliseconds:F2} ms, sampled heap delta={statistics.MemoryMedianBytes:N0} bytes; normalized worst emit={statistics.EmitNormalizedWorst:F2}, matching={statistics.MatchingNormalizedWorst:F2}, sampled heap delta={statistics.MemoryNormalizedWorst:F2} ratio units.");
         Console.WriteLine($"benchmark derived normalized threshold: emit={statistics.EmitNormalizedThreshold:F2}; matching={statistics.MatchingNormalizedThreshold:F2}; sampled heap delta={statistics.MemoryNormalizedThreshold:F2} ratio units");
-        Console.WriteLine($"benchmark raw minima: reference={referenceElapsed:F2} ms; emit={emitElapsed:F2} ms; matching={matchingElapsed:F2} ms; sampled heap delta={retained:N0} bytes");
-        Console.WriteLine($"benchmark normalized minima: emit={normalizedEmit:F2}; matching={normalizedMatching:F2}; sampled heap delta={normalizedMemory:F2} ratio units");
+        Console.WriteLine($"benchmark statistic: median of {benchmarkAttempts} per-attempt normalized ratios; pass/fail uses this central statistic for each dimension.");
+        Console.WriteLine($"benchmark raw median: reference={referenceElapsed:F2} ms; emit={emitElapsed:F2} ms; matching={matchingElapsed:F2} ms; sampled heap delta={retained:N0} bytes");
+        Console.WriteLine($"benchmark normalized median: emit={normalizedEmit:F2}; matching={normalizedMatching:F2}; sampled heap delta={normalizedMemory:F2} ratio units");
         PrintBenchmarkGate("normalized emit", statistics.EmitNormalizedWorst, statistics.EmitNormalizedThreshold, normalizedEmit, "ratio", statistics.HeadroomFraction, emitPass);
         PrintBenchmarkGate("normalized matching", statistics.MatchingNormalizedWorst, statistics.MatchingNormalizedThreshold, normalizedMatching, "ratio", statistics.HeadroomFraction, matchingPass);
         PrintBenchmarkGate("normalized sampled heap delta", statistics.MemoryNormalizedWorst, statistics.MemoryNormalizedThreshold, normalizedMemory, "ratio", statistics.HeadroomFraction, memoryPass);
         var benchmarkPass = emitPass && matchingPass && memoryPass;
-        Console.WriteLine($"benchmark estimator: minimum of {benchmarkAttempts} same-process product and reference attempts; pass/fail uses the minimum per-attempt normalized ratio for each dimension.");
+        Console.WriteLine($"benchmark estimator: median of {benchmarkAttempts} same-process product and reference attempts; pass/fail uses the median per-attempt normalized ratio for each dimension.");
         Console.WriteLine($"benchmark verdict: {(benchmarkPass ? "PASS" : "FAIL")} - all measured dimensions must remain within the fixed host-relative thresholds.");
         Require(benchmarkPass, "The benchmark exceeded the fixed host-relative acceptance threshold.");
-        Console.WriteLine($"PASS benchmark: events={eventCount}, attempts={benchmarkAttempts}, reference-min-ms={referenceElapsed:F2}, emit-min-ms={emitElapsed:F2}, matching-min-ms={matchingElapsed:F2}, peak-captured-memory-estimate-bytes={retained}, configured-limit={eventCount}, overflow-behavior=explicit-conservative, disposal=covered.");
+        Console.WriteLine($"PASS benchmark: events={eventCount}, attempts={benchmarkAttempts}, reference-median-ms={referenceElapsed:F2}, emit-median-ms={emitElapsed:F2}, matching-median-ms={matchingElapsed:F2}, median-captured-memory-estimate-bytes={retained}, configured-limit={eventCount}, overflow-behavior=explicit-conservative, disposal=covered.");
         Console.WriteLine();
     }
 
@@ -722,6 +723,28 @@ internal static class Program
         timer.Stop();
         GC.KeepAlive(accumulator);
         return timer.Elapsed.TotalMilliseconds;
+    }
+
+    private static double Median(double[] values)
+    {
+        if (values.Length < 5 || values.Length % 2 == 0)
+        {
+            throw new InvalidOperationException("The benchmark statistic requires an odd number of at least five attempts.");
+        }
+
+        var ordered = values.OrderBy(static value => value).ToArray();
+        return ordered[ordered.Length / 2];
+    }
+
+    private static long Median(long[] values)
+    {
+        if (values.Length < 5 || values.Length % 2 == 0)
+        {
+            throw new InvalidOperationException("The benchmark statistic requires an odd number of at least five attempts.");
+        }
+
+        var ordered = values.OrderBy(static value => value).ToArray();
+        return ordered[ordered.Length / 2];
     }
 
     private static void PrintBenchmarkGate(string name, double baseline, double threshold, double measured, string unit, double margin, bool passed)
