@@ -39,6 +39,7 @@ Registration labels are safe identifiers limited to 64 characters using letters,
 ## Documentation
 
 - [Supported fields](docs/supported-fields.md)
+- [ASP.NET Core sample](samples/KeelMatrix.LogLeak.AspNetCore/README.md)
 - [Privacy](PRIVACY.md)
 - [Security](SECURITY.md)
 - [Development guide](docs/DEV.md)

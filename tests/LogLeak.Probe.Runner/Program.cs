@@ -633,8 +633,8 @@ internal static class Program
         Console.WriteLine("BENCHMARK SAMPLE SET REPRODUCTION");
         var statistics = BenchmarkEvidence.CommittedStatistics;
         BenchmarkEvidence.PrintSampleSet();
-        Console.WriteLine($"sample policy: threshold = ceiling(worst recorded sample x (1 + {statistics.HeadroomFraction:P0})), rounded to the next {statistics.TimeRoundingMilliseconds:0} ms or {statistics.MemoryRoundingBytes:N0} byte increment; this policy is fixed before the measured gate run.");
-        Console.WriteLine($"derived threshold: emit={statistics.EmitThresholdMilliseconds:F2} ms; matching={statistics.MatchingThresholdMilliseconds:F2} ms; sampled heap delta={statistics.MemoryThresholdBytes:N0} bytes");
+        Console.WriteLine($"sample policy: threshold = ceiling(worst normalized sample x (1 + {statistics.HeadroomFraction:P0})), rounded to the next {statistics.NormalizedRounding:0.##} ratio unit; this policy is fixed before the measured gate run.");
+        Console.WriteLine($"derived normalized threshold: emit={statistics.EmitNormalizedThreshold:F2}; matching={statistics.MatchingNormalizedThreshold:F2}; sampled heap delta={statistics.MemoryNormalizedThreshold:F2} ratio units");
         Console.WriteLine();
     }
 
@@ -649,33 +649,40 @@ internal static class Program
         {
             var measurement = MeasureBenchmarkAttempt(eventCount);
             attempts.Add(measurement);
-            Console.WriteLine($"benchmark attempt {attempt}: emit={measurement.EmitMilliseconds:F2} ms; matching={measurement.MatchingMilliseconds:F2} ms; sampled heap delta={measurement.RetainedBytes:N0} bytes");
+            Console.WriteLine($"benchmark attempt {attempt}: reference={measurement.ReferenceMilliseconds:F2} ms; emit={measurement.EmitMilliseconds:F2} ms; matching={measurement.MatchingMilliseconds:F2} ms; sampled heap delta={measurement.RetainedBytes:N0} bytes; normalized emit={measurement.EmitMilliseconds / measurement.ReferenceMilliseconds:F2}; normalized matching={measurement.MatchingMilliseconds / measurement.ReferenceMilliseconds:F2}; normalized memory={measurement.RetainedBytes / measurement.ReferenceMilliseconds:F2}");
         }
 
         var emitElapsed = attempts.Min(measurement => measurement.EmitMilliseconds);
         var matchingElapsed = attempts.Min(measurement => measurement.MatchingMilliseconds);
         var retained = attempts.Min(measurement => measurement.RetainedBytes);
-        var emitPass = emitElapsed <= statistics.EmitThresholdMilliseconds;
-        var matchingPass = matchingElapsed <= statistics.MatchingThresholdMilliseconds;
-        var memoryPass = retained <= statistics.MemoryThresholdBytes;
+        var referenceElapsed = attempts.Min(measurement => measurement.ReferenceMilliseconds);
+        var normalizedEmit = attempts.Min(measurement => measurement.EmitMilliseconds / measurement.ReferenceMilliseconds);
+        var normalizedMatching = attempts.Min(measurement => measurement.MatchingMilliseconds / measurement.ReferenceMilliseconds);
+        var normalizedMemory = attempts.Min(measurement => measurement.RetainedBytes / measurement.ReferenceMilliseconds);
+        var emitPass = normalizedEmit <= statistics.EmitNormalizedThreshold;
+        var matchingPass = normalizedMatching <= statistics.MatchingNormalizedThreshold;
+        var memoryPass = normalizedMemory <= statistics.MemoryNormalizedThreshold;
 
-        Console.WriteLine($"benchmark host: calibration=Windows x64, target=net8.0, runtime={RuntimeInformation.FrameworkDescription}, observed-host={RuntimeInformation.OSDescription}, process={RuntimeInformation.ProcessArchitecture}; thresholds are host-relative, not cross-platform performance guarantees.");
-        Console.WriteLine($"benchmark policy: threshold = ceiling(worst recorded sample x (1 + {statistics.HeadroomFraction:P0})), rounded to the next {statistics.TimeRoundingMilliseconds:0} ms or {statistics.MemoryRoundingBytes:N0} byte increment; fixed before this measured gate run.");
-        Console.WriteLine($"benchmark sample basis: committed sample set; samples={statistics.SampleCount}; median emit={statistics.EmitMedianMilliseconds:F2} ms, matching={statistics.MatchingMedianMilliseconds:F2} ms, sampled heap delta={statistics.MemoryMedianBytes:N0} bytes; worst emit={statistics.EmitWorstMilliseconds:F2} ms, matching={statistics.MatchingWorstMilliseconds:F2} ms, sampled heap delta={statistics.MemoryWorstBytes:N0} bytes.");
-        Console.WriteLine($"benchmark derived threshold: emit={statistics.EmitThresholdMilliseconds:F2} ms; matching={statistics.MatchingThresholdMilliseconds:F2} ms; sampled heap delta={statistics.MemoryThresholdBytes:N0} bytes");
-        PrintBenchmarkGate("emit", statistics.EmitWorstMilliseconds, statistics.EmitThresholdMilliseconds, emitElapsed, "ms", statistics.HeadroomFraction, emitPass);
-        PrintBenchmarkGate("matching", statistics.MatchingWorstMilliseconds, statistics.MatchingThresholdMilliseconds, matchingElapsed, "ms", statistics.HeadroomFraction, matchingPass);
-        PrintBenchmarkGate("sampled heap delta", statistics.MemoryWorstBytes, statistics.MemoryThresholdBytes, retained, "bytes", statistics.HeadroomFraction, memoryPass);
+        Console.WriteLine($"benchmark host: calibration=Windows x64, target=net8.0, runtime={RuntimeInformation.FrameworkDescription}, observed-host={RuntimeInformation.OSDescription}, process={RuntimeInformation.ProcessArchitecture}; normalized ratios are environment-relative, not cross-platform performance guarantees.");
+        Console.WriteLine($"benchmark policy: threshold = ceiling(worst normalized sample x (1 + {statistics.HeadroomFraction:P0})), rounded to the next {statistics.NormalizedRounding:0.##} ratio unit; fixed before this measured gate run.");
+        Console.WriteLine($"benchmark sample basis: committed sample set; samples={statistics.SampleCount}; median raw reference={statistics.ReferenceMedianMilliseconds:F2} ms, emit={statistics.EmitMedianMilliseconds:F2} ms, matching={statistics.MatchingMedianMilliseconds:F2} ms, sampled heap delta={statistics.MemoryMedianBytes:N0} bytes; normalized worst emit={statistics.EmitNormalizedWorst:F2}, matching={statistics.MatchingNormalizedWorst:F2}, sampled heap delta={statistics.MemoryNormalizedWorst:F2} ratio units.");
+        Console.WriteLine($"benchmark derived normalized threshold: emit={statistics.EmitNormalizedThreshold:F2}; matching={statistics.MatchingNormalizedThreshold:F2}; sampled heap delta={statistics.MemoryNormalizedThreshold:F2} ratio units");
+        Console.WriteLine($"benchmark raw minima: reference={referenceElapsed:F2} ms; emit={emitElapsed:F2} ms; matching={matchingElapsed:F2} ms; sampled heap delta={retained:N0} bytes");
+        Console.WriteLine($"benchmark normalized minima: emit={normalizedEmit:F2}; matching={normalizedMatching:F2}; sampled heap delta={normalizedMemory:F2} ratio units");
+        PrintBenchmarkGate("normalized emit", statistics.EmitNormalizedWorst, statistics.EmitNormalizedThreshold, normalizedEmit, "ratio", statistics.HeadroomFraction, emitPass);
+        PrintBenchmarkGate("normalized matching", statistics.MatchingNormalizedWorst, statistics.MatchingNormalizedThreshold, normalizedMatching, "ratio", statistics.HeadroomFraction, matchingPass);
+        PrintBenchmarkGate("normalized sampled heap delta", statistics.MemoryNormalizedWorst, statistics.MemoryNormalizedThreshold, normalizedMemory, "ratio", statistics.HeadroomFraction, memoryPass);
         var benchmarkPass = emitPass && matchingPass && memoryPass;
-        Console.WriteLine($"benchmark estimator: minimum of {benchmarkAttempts} same-process attempts per dimension; pass/fail uses those minima.");
+        Console.WriteLine($"benchmark estimator: minimum of {benchmarkAttempts} same-process product and reference attempts; pass/fail uses the minimum per-attempt normalized ratio for each dimension.");
         Console.WriteLine($"benchmark verdict: {(benchmarkPass ? "PASS" : "FAIL")} - all measured dimensions must remain within the fixed host-relative thresholds.");
         Require(benchmarkPass, "The benchmark exceeded the fixed host-relative acceptance threshold.");
-        Console.WriteLine($"PASS benchmark: events={eventCount}, attempts={benchmarkAttempts}, emit-elapsed-ms={emitElapsed:F2}, matching-elapsed-ms={matchingElapsed:F2}, peak-captured-memory-estimate-bytes={retained}, configured-limit={eventCount}, overflow-behavior=explicit-conservative, disposal=covered.");
+        Console.WriteLine($"PASS benchmark: events={eventCount}, attempts={benchmarkAttempts}, reference-min-ms={referenceElapsed:F2}, emit-min-ms={emitElapsed:F2}, matching-min-ms={matchingElapsed:F2}, peak-captured-memory-estimate-bytes={retained}, configured-limit={eventCount}, overflow-behavior=explicit-conservative, disposal=covered.");
         Console.WriteLine();
     }
 
     private static BenchmarkMeasurement MeasureBenchmarkAttempt(int eventCount)
     {
+        var referenceMilliseconds = MeasureReferenceWorkload();
         var sentinel = NewSentinel("benchmark-absent");
         using var probe = NewProbe(eventCount);
         probe.AddSentinel("benchmark-absent", sentinel);
@@ -699,7 +706,22 @@ internal static class Program
         var retained = Math.Max(0, peak - baseline);
         Require(findings.Count == 0, "The absent-sentinel benchmark produced a finding.");
         Require(probe.CapturedEventCount == eventCount, "The benchmark did not retain exactly the configured event limit.");
-        return new BenchmarkMeasurement(emitTimer.Elapsed.TotalMilliseconds, matchingElapsed.TotalMilliseconds, retained);
+        return new BenchmarkMeasurement(referenceMilliseconds, emitTimer.Elapsed.TotalMilliseconds, matchingElapsed.TotalMilliseconds, retained);
+    }
+
+    private static double MeasureReferenceWorkload()
+    {
+        const int iterations = 20_000_000;
+        var accumulator = 0x9E3779B9u;
+        var timer = Stopwatch.StartNew();
+        for (var index = 0; index < iterations; index++)
+        {
+            accumulator = unchecked((accumulator * 1_664_525u) + (uint)index + 1_013_904_223u);
+        }
+
+        timer.Stop();
+        GC.KeepAlive(accumulator);
+        return timer.Elapsed.TotalMilliseconds;
     }
 
     private static void PrintBenchmarkGate(string name, double baseline, double threshold, double measured, string unit, double margin, bool passed)
@@ -719,14 +741,14 @@ internal static class Program
         Console.WriteLine("ASP.NET Core setup requires only a few lines: PASS - WebApplicationFactory logging setup is exercised.");
         Console.WriteLine($"Resource limits: PASS - event capture, {MaximumInspectionUnitsPerEvent} inspection units/event, {MaximumFindingsPerEvent} findings/event, a {MaximumTransientAllocationBytes:N0}-byte transient-allocation guard/event, and {MaximumPayloadCharacters}-character text units are guarded; overflow is explicit inconclusive.");
         Console.WriteLine("Supported/excluded field contract: PASS - {OriginalFormat} is excluded metadata and recorded excluded-field fixtures match the classifier output.");
-        Console.WriteLine($"Benchmark overhead acceptable: PASS - fixed thresholds derive mechanically from the committed {statistics.SampleCount}-sample host baseline with {statistics.HeadroomFraction:P0} headroom; emit, matching, and sampled-memory verdicts are printed above.");
+        Console.WriteLine($"Benchmark overhead acceptable: PASS - normalized thresholds derive mechanically from the committed {statistics.SampleCount}-sample reference-relative baseline with {statistics.HeadroomFraction:P0} headroom; raw and normalized measurements are printed above.");
         Console.WriteLine("Diagnostic coverage: PASS within probe-owned and simulated output paths; consumer tests cover assertion and telemetry behavior separately.");
         Console.WriteLine("The retained corpus is a technical feasibility check; consumer contract tests validate package behavior.");
     }
 
     private static BoundaryProbe NewProbe(int maximumEvents, int maximumSentinels = 128, int maximumFindings = MaximumFindingsTotal, int maximumPayloadCharacters = MaximumPayloadCharacters, int maximumInspectionUnitsPerEvent = MaximumInspectionUnitsPerEvent, int maximumFindingsPerEvent = MaximumFindingsPerEvent, long maximumTransientAllocationBytes = MaximumTransientAllocationBytes) => new(new CaptureOptions(maximumEvents, maximumSentinels, maximumFindings, maximumPayloadCharacters: maximumPayloadCharacters, maximumInspectionUnitsPerEvent: maximumInspectionUnitsPerEvent, maximumFindingsPerEvent: maximumFindingsPerEvent, maximumTransientAllocationBytes: maximumTransientAllocationBytes));
 
-    private sealed record BenchmarkMeasurement(double EmitMilliseconds, double MatchingMilliseconds, long RetainedBytes);
+    private sealed record BenchmarkMeasurement(double ReferenceMilliseconds, double EmitMilliseconds, double MatchingMilliseconds, long RetainedBytes);
 
     private static string? GetOption(string[] args, string optionName)
     {

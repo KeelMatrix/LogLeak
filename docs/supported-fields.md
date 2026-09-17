@@ -13,6 +13,8 @@ Matching is exact ordinal literal matching. The verifier does not perform case f
 
 Findings contain only the safe registration label, broad location, and metadata that does not contain a registered sentinel. They never contain sentinel values, full messages, exception payloads, or surrounding state.
 
+The [ASP.NET Core sample](../samples/KeelMatrix.LogLeak.AspNetCore/README.md) shows the same provider boundary in a minimal web application, including the expected clean response and the safe assertion failure shape.
+
 Registration labels are safe identifiers limited to 64 characters using letters, digits, hyphens, underscores, periods, and colons. No registered label may textually contain a registered value, and no registered value may textually contain a registered label. The rule uses exact ordinal comparison (case-sensitive, with no normalization) and is checked at every registration in either order.
 
 ## Scope boundary

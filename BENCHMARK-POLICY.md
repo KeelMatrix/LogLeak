@@ -1,45 +1,47 @@
 # Probe benchmark policy
 
-The performance gate is a probe-only resource contract. It describes the Windows x64 baseline named below; it is not a cross-platform performance guarantee.
+The performance gate is a probe-only resource contract. It uses an environment-relative reference workload; it is not a cross-platform performance guarantee.
 
 ## Fixed rule
 
 The policy is fixed before the measured gate run:
 
 ```text
-threshold = ceiling(worst recorded sample × 1.25)
+threshold = ceiling(worst normalized sample × 1.25)
 ```
 
-<!-- benchmark-policy: rule-id=worst-recorded-sample-plus-headroom-v1; headroom-percent=25; time-rounding-ms=1; memory-rounding-bytes=100000 -->
+<!-- benchmark-policy: rule-id=worst-normalized-sample-plus-headroom-v2; headroom-percent=25; normalized-rounding=0.01 -->
 
-Time thresholds round upward to the next 1 ms. Sampled heap-delta thresholds round upward to the next 100,000 bytes. The 25% headroom is applied to the worst value, not to a single favorable observation and not to the current run. A threshold or margin change requires a new committed sample set and policy change together.
+Normalized thresholds round upward to the next 0.01 ratio unit. The 25% headroom is applied to the worst normalized value, not to a single favorable observation and not to the current run. A threshold or margin change requires a new committed sample set and policy change together.
 
-The 25% headroom is a fixed design allowance: the observed spread across the ten samples is below 10% in every dimension, so it absorbs ordinary host scheduling noise while still failing a meaningful regression.
+The 25% headroom is a fixed design allowance applied after reference normalization: it is not recalibrated from the current run, and it leaves a closed margin for a meaningful normalized regression.
 
 The margin may not be widened in response to a failing measurement. A host change or implementation change requires a new sample campaign; the fixed rule is then applied to that committed campaign before measuring the gate.
 
 ## Recorded sample set
 
-These ten samples were recorded on Windows x64, target `net8.0`, .NET 8.0.31, Microsoft Windows 10.0.19045, process architecture X64, using the 100,000-event benchmark after the aggregate inspection guards were implemented. Raw values are executable data in `tests/LogLeak.Probe.Runner/BenchmarkSamples.json`; the runner derives the summaries and thresholds from those values.
+These ten samples were recorded on Windows x64, target `net8.0`, .NET 8.0.31, Microsoft Windows 10.0.19045, process architecture X64, using the 100,000-event benchmark and the deterministic pure-CPU reference workload. Raw values and reference measurements are executable data in `tests/LogLeak.Probe.Runner/BenchmarkSamples.json`; the runner derives normalized summaries and thresholds from those values.
 
-| Sample | Emit (ms) | Matching (ms) | Sampled heap delta (bytes) |
-| ---: | ---: | ---: | ---: |
-| 1 | 87.53 | 44.08 | 8,310,816 |
-| 2 | 84.91 | 44.22 | 8,310,816 |
-| 3 | 83.14 | 41.66 | 8,310,816 |
-| 4 | 83.94 | 41.66 | 8,318,904 |
-| 5 | 82.41 | 41.78 | 8,310,760 |
-| 6 | 84.10 | 42.49 | 8,310,760 |
-| 7 | 82.03 | 41.72 | 8,310,760 |
-| 8 | 84.43 | 42.67 | 8,310,760 |
-| 9 | 86.88 | 43.35 | 8,310,816 |
-| 10 | 80.88 | 40.38 | 8,310,760 |
+| Sample | Reference (ms) | Emit (ms) | Matching (ms) | Sampled heap delta (bytes) |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 27.74 | 78.19 | 45.26 | 8,318,896 |
+| 2 | 27.31 | 68.16 | 40.44 | 8,310,736 |
+| 3 | 25.86 | 80.85 | 46.24 | 8,314,352 |
+| 4 | 26.53 | 86.49 | 42.38 | 8,314,352 |
+| 5 | 26.46 | 23.34 | 9.59 | 8,314,352 |
+| 6 | 26.11 | 79.27 | 44.91 | 8,318,896 |
+| 7 | 25.92 | 70.87 | 41.33 | 8,310,736 |
+| 8 | 25.86 | 69.46 | 40.40 | 8,314,352 |
+| 9 | 25.81 | 90.54 | 50.04 | 8,314,352 |
+| 10 | 25.79 | 82.99 | 45.53 | 8,314,352 |
 
 Derived statistics:
 
-- Median: emit `84.02 ms`, matching `42.14 ms`, sampled heap delta `8,310,788 bytes`.
-- Worst: emit `87.53 ms`, matching `44.22 ms`, sampled heap delta `8,318,904 bytes`.
-- Derived thresholds: emit `110 ms`, matching `56 ms`, sampled heap delta `10,400,000 bytes`.
+- Median raw: reference `26.02 ms`, emit `78.73 ms`, matching `43.64 ms`, sampled heap delta `8,314,352 bytes`.
+- Median normalized: emit `2.93`, matching `1.61`, sampled heap delta `319619.91` ratio units.
+- Worst raw: reference `27.74 ms`, emit `90.54 ms`, matching `50.04 ms`, sampled heap delta `8,318,896 bytes`.
+- Worst normalized: emit `3.51`, matching `1.94`, sampled heap delta `322386.66` ratio units.
+- Derived normalized thresholds: emit `4.39`, matching `2.43`, sampled heap delta `402983.33` ratio units.
 
 Reproduce the committed sample-set arithmetic with:
 
@@ -47,13 +49,13 @@ Reproduce the committed sample-set arithmetic with:
 dotnet run --project tests/LogLeak.Probe.Runner/LogLeak.Probe.Runner.csproj -c Release --no-build --no-restore --performance-samples
 ```
 
-The live `--performance` gate measures the current run at least five times in one process and takes the minimum emit, matching, and sampled-memory measurement for each dimension before comparing those minima with these derived thresholds. The minimum is a contention-resistant estimator: a transient scheduler interruption affects only an outlier attempt, while a real regression raises the minimum across attempts. A different host, target, runtime, or process architecture is a different baseline: rerun and commit a replacement sample set under this same policy before changing a threshold. This gate does not prove behavior for other platforms.
+The live `--performance` gate measures a deterministic CPU reference workload and the product workload in the same process on every attempt, takes at least five attempts, and normalizes each product metric by that attempt's reference measurement before comparing the minimum normalized ratios with these derived thresholds. Raw absolute measurements remain visible as evidence; the closed normalized criterion reduces host-contention sensitivity without making the gate advisory. A different implementation, target, runtime, or process architecture is a different baseline: rerun and commit a replacement sample set under this same policy before changing a threshold. This gate does not prove behavior for other platforms.
 
 ## Provenance
 
 Earlier pre-release revisions of this probe set wrote threshold values directly (margin 75%, then 125%). Those hand-set values are superseded: thresholds are now derived from the committed sample set by the fixed rule, and a threshold or margin change requires a committed sample-set or policy change with the recompute check passing.
 
-The live gate consumes one computed statistics object derived from the committed sample set. The provenance check explicitly compares its emit, matching, and sampled-memory thresholds with that same live-consumed object; any divergence names the affected threshold and fails. `--performance` runs this binding check before measuring the gate, so it fails closed before it can report a pass with decoupled thresholds.
+The live gate consumes one computed statistics object derived from the committed sample set. The provenance check explicitly compares its normalized emit, matching, and sampled-memory thresholds with that same live-consumed object; any divergence names the affected threshold and fails. `--performance` runs this binding check before measuring the gate, so it fails closed before it can report a pass with decoupled thresholds.
 
 Run the deterministic provenance check with:
 

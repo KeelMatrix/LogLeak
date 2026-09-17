@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <KEELMATRIX_NO_TELEMETRY>1</KEELMATRIX_NO_TELEMETRY>
+      <DOTNET_CLI_TELEMETRY_OPTOUT>1</DOTNET_CLI_TELEMETRY_OPTOUT>
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>

@@ -10,6 +10,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+$env:KEELMATRIX_NO_TELEMETRY = '1'
+$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+Write-Host 'validation telemetry: KEELMATRIX_NO_TELEMETRY=1; DOTNET_CLI_TELEMETRY_OPTOUT=1 (inherited by every child process)'
+
 $root = (Resolve-Path -LiteralPath $RepositoryRoot -ErrorAction Stop).Path
 $solutionPath = (Resolve-Path -LiteralPath (Join-Path $root $Solution) -ErrorAction Stop).Path
 $configPath = (Resolve-Path -LiteralPath (Join-Path $root 'NuGet.config') -ErrorAction Stop).Path
@@ -24,6 +28,7 @@ function Invoke-DotNet {
         if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
     }
     Write-Host ('dotnet ' + ($displayArguments -join ' '))
+    Write-Host 'child environment: KEELMATRIX_NO_TELEMETRY=1; DOTNET_CLI_TELEMETRY_OPTOUT=1'
     & dotnet @Arguments
     $exitCode = $LASTEXITCODE
     Write-Host "exit code $exitCode"
@@ -39,7 +44,7 @@ if (-not [string]::IsNullOrWhiteSpace($Version)) {
 
 Invoke-DotNet @('restore', $solutionPath, '--configfile', $configPath, '--no-cache', '--force')
 Invoke-DotNet (@('build', $solutionPath, '--configuration', $Configuration, '--no-restore') + $versionArguments)
-Invoke-DotNet @('test', $focusedTests, '--configuration', $Configuration, '--no-build', '--no-restore')
+Invoke-DotNet @('test', $focusedTests, '--configuration', $Configuration, '--no-build', '--no-restore', '--settings', (Join-Path $root 'tests/KeelMatrix.LogLeak.Tests/LogLeak.Tests.runsettings'))
 Invoke-DotNet @('run', '--project', $probeProject, '--configuration', $Configuration, '--no-build', '--no-restore')
 Invoke-DotNet @('format', 'whitespace', $solutionPath, '--verify-no-changes', '--no-restore')
 Invoke-DotNet @('format', 'analyzers', $shippingProject, '--verify-no-changes', '--no-restore', '--severity', 'error')
