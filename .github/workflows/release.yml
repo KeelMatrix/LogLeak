@@ -13,7 +13,7 @@ env:
 
 jobs:
   verify:
-    name: Verify release candidate
+    name: Verify release inputs
     runs-on: ubuntu-24.04
     permissions:
       contents: read

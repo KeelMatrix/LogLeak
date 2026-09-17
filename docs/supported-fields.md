@@ -12,3 +12,9 @@ The `{OriginalFormat}` state entry is reserved framework metadata. It is not cla
 Matching is exact ordinal literal matching. The verifier does not perform case folding, URL decoding, Base64 expansion, hashing, alternate encodings, entropy scanning, or arbitrary object serialization. Values of non-string structured properties are not recursively inspected.
 
 Findings contain only the safe registration label, broad location, and metadata that does not contain a registered sentinel. They never contain sentinel values, full messages, exception payloads, or surrounding state.
+
+Registration labels are safe identifiers limited to 64 characters using letters, digits, hyphens, underscores, periods, and colons. A registered value may not appear in a label, including a label from another registration.
+
+## Scope boundary
+
+Register the capture provider before opening scopes that the probe should observe. Scopes opened before provider registration are outside the declared observed boundary and may result in a clean verification even when they contain a registered sentinel. This is a limitation of the provider-registration boundary, not proof that the earlier scope was safe.

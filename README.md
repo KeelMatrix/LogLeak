@@ -6,7 +6,10 @@ Redaction code is not proof that sensitive values stayed out of logs. LogLeak le
 
 ```bash
 dotnet add package KeelMatrix.LogLeak
+dotnet add package Microsoft.Extensions.Logging
 ```
+
+The second package supplies the `AddLogging` registration API used by the quick start.
 
 ## Quick start
 
@@ -30,6 +33,8 @@ probe.AssertNoLeaks();
 ```
 
 Use synthetic values created only for tests. A planted value produces a safe `LogLeakAssertionException` containing the registration label, broad leak location, and safe logging metadata. The value, complete message, exception payload, and surrounding state are never included.
+
+Registration labels are safe identifiers limited to 64 characters using letters, digits, `-`, `_`, `.`, and `:`. A registered value may not appear in a label, including a label from another registration.
 
 ## Documentation
 
@@ -59,6 +64,10 @@ Conclusive verification requests best-effort activation and weekly heartbeat sig
 ## Limitations
 
 LogLeak verifies only the captured `Microsoft.Extensions.Logging` provider boundary. It does not inspect arbitrary downstream sinks or discover unregistered sensitive data. The package targets `net8.0` and `netstandard2.0`.
+
+## Scope boundary
+
+Register `probe.Provider` before opening any scopes that the probe should observe. Scopes opened before provider registration are outside the declared observed boundary and may result in a clean verification even when they contain a registered sentinel.
 
 ## Troubleshooting
 
