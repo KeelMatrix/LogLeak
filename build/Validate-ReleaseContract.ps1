@@ -229,24 +229,18 @@ function Assert-FirstReleaseEntry {
         Fail-Contract 'the first public release Added section must contain at least one bullet.'
     }
 
-    $remediationMarkers = @(
-        'now',
-        'no\s+longer',
-        'previously',
-        'formerly',
-        'used\s+to',
-        'fixed',
-        'fixes',
-        'corrected',
-        'resolved',
-        'addressed',
-        'this\s+removes',
-        'this\s+fixes',
-        'changed\s+from'
+    # First-release bullets describe the initial product, so transition language
+    # is invalid even when it refers only to an unreleased implementation. The
+    # verb stems intentionally cover normal inflections and near-synonyms rather
+    # than maintaining a fragile allowlist of complete phrases.
+    $remediationRules = @(
+        [pscustomobject]@{ Name = 'transition verb'; Pattern = '\b(?:fix\w*|correct\w*|resol\w*|address\w*|rectif\w*|replac\w*|revis\w*)\b' },
+        [pscustomobject]@{ Name = 'transition comparison'; Pattern = '\b(?:no\s+longer|not\s+yet\s+published|previously|formerly|used\s+to|this\s+removes|this\s+fixes|changed\s+from)\b' },
+        [pscustomobject]@{ Name = 'present transition'; Pattern = '\bnow\b' }
     )
-    foreach ($marker in $remediationMarkers) {
-        if ($entryText -match "(?i)\b$marker\b") {
-            Fail-Contract "the first public release entry contains remediation-history wording matching '$marker'."
+    foreach ($rule in $remediationRules) {
+        if ($entryText -match "(?i)$($rule.Pattern)") {
+            Fail-Contract "the first public release entry contains remediation-history wording matching the $($rule.Name) rule."
         }
     }
 }
@@ -289,7 +283,10 @@ function Assert-SourcePackageVersion {
 }
 
 function Assert-DependencyVersions {
-    param([Parameter(Mandatory)][string] $Root)
+    param(
+        [Parameter(Mandatory)][string] $Root,
+        [Parameter(Mandatory)][string] $ReleaseVersion
+    )
 
     $projectPath = Join-Path $Root 'src/KeelMatrix.LogLeak/KeelMatrix.LogLeak.csproj'
     $centralPath = Join-Path $Root 'Directory.Packages.props'
@@ -307,6 +304,18 @@ function Assert-DependencyVersions {
             Fail-Contract "central package '$id' is declared more than once."
         }
         $centralVersions[$id] = Get-ExactVersion $version "central package '$id'"
+    }
+
+    $packageIdNode = $project.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='PackageId']")
+    if ($null -eq $packageIdNode -or [string]::IsNullOrWhiteSpace($packageIdNode.InnerText)) {
+        Fail-Contract "shipping project PackageId must be declared before central package validation."
+    }
+    $shippingPackageId = $packageIdNode.InnerText.Trim()
+    if (-not $centralVersions.ContainsKey($shippingPackageId)) {
+        Fail-Contract "central package management does not declare the shipping package '$shippingPackageId'."
+    }
+    if ($centralVersions[$shippingPackageId] -ne $ReleaseVersion) {
+        Fail-Contract "central shipping package '$shippingPackageId' is '$($centralVersions[$shippingPackageId])', expected '$ReleaseVersion'."
     }
 
     $references = @($project.SelectNodes("/*[local-name()='Project']//*[local-name()='PackageReference']"))
@@ -409,7 +418,7 @@ try {
     }
 
     Assert-SourcePackageVersion $root $Version
-    Assert-DependencyVersions $root
+    Assert-DependencyVersions $root $Version
     Assert-InstallExamples $root $Version
 
     $tagDescription = if ($null -ne $Tag -and $Tag.Trim() -ne '') { ", tag $Tag" } else { '' }

@@ -12,13 +12,54 @@ env:
   KEELMATRIX_NO_TELEMETRY: '1'
 
 jobs:
-  verify:
-    name: Verify release inputs
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
+  resolve-version:
+    name: Resolve release version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.release-version.outputs.version }}
+      release-date: ${{ steps.release-version.outputs.release-date }}
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@v7
+
+      - name: Derive and validate release version
+        id: release-version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -ne 'tag') {
+            throw "Release workflow requires a tag ref, got '$env:GITHUB_REF_TYPE'."
+          }
+          $tag = '${{ github.ref_name }}'
+          if ($tag -notmatch '^v(?<version>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$') {
+            throw "Malformed release tag '$tag'. Expected vX.Y.Z."
+          }
+          $tagCommit = (git rev-parse --verify "refs/tags/$tag^{commit}").Trim()
+          if ($tagCommit -ne $env:GITHUB_SHA) {
+            throw "Tag '$tag' resolves to commit '$tagCommit', but GitHub checked out '$env:GITHUB_SHA'."
+          }
+          $commitDate = (git show -s --format=%cs $tagCommit).Trim()
+          if ($commitDate -notmatch '^\d{4}-\d{2}-\d{2}$') {
+            throw "Could not derive an ISO commit date for '$tag'."
+          }
+          "version=$($Matches.version)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "release-date=$commitDate" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+  platform:
+    name: Verify / ${{ matrix.os }}
+    needs: resolve-version
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
+    env:
+      RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+      RELEASE_DATE: ${{ needs.resolve-version.outputs.release-date }}
     steps:
       - name: Check out tagged commit
         uses: actions/checkout@v7
@@ -28,58 +69,44 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Derive and validate release version
-        id: release-version
-        shell: pwsh
-        run: |
-          $tag = "${{ github.ref_name }}"
-          if ($tag -notmatch '^v(?<version>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$') {
-            throw "Malformed release tag '$tag'. Expected vX.Y.Z."
-          }
-          $version = $Matches.version
-          $tagCommit = (git rev-parse --verify "refs/tags/$tag^{commit}").Trim()
-          if ($tagCommit -ne $env:GITHUB_SHA) {
-            throw "Tag '$tag' resolves to commit '$tagCommit', but GitHub checked out '$env:GITHUB_SHA'."
-          }
-          $commitDate = (git show -s --format=%cs $tagCommit).Trim()
-          if ($commitDate -notmatch '^\d{4}-\d{2}-\d{2}$') {
-            throw "Could not derive an ISO commit date for '$tag'."
-          }
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "release-date=$commitDate" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-
       - name: Validate release contract
         shell: pwsh
         run: >-
           ./build/Validate-ReleaseContract.ps1
-          -Version '${{ steps.release-version.outputs.version }}'
+          -Version $env:RELEASE_VERSION
           -Tag '${{ github.ref_name }}'
-          -ExpectedReleaseDate '${{ steps.release-version.outputs.release-date }}'
+          -ExpectedReleaseDate $env:RELEASE_DATE
 
-      - name: Restore
-        run: dotnet restore LogLeak.Probe.sln --configfile NuGet.config --no-cache --force
-
-      - name: Build Release
+      - name: Run repository-controlled platform verification
+        shell: pwsh
         run: >-
-          dotnet build LogLeak.Probe.sln
-          --configuration Release
-          --no-restore
-          -p:Version=${{ steps.release-version.outputs.version }}
-          -p:PackageVersion=${{ steps.release-version.outputs.version }}
+          ./build/Invoke-ReleaseVerification.ps1
+          -Version $env:RELEASE_VERSION
 
-      - name: Test shipping project
-        run: >-
-          dotnet test tests/KeelMatrix.LogLeak.Tests/KeelMatrix.LogLeak.Tests.csproj
-          --configuration Release
-          --no-build
-          --no-restore
+  package:
+    name: Package / inspect and consume
+    needs:
+      - resolve-version
+      - platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@v7
 
-      - name: Pack, inspect, and smoke-test exact artifacts
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run repository package gate
         shell: pwsh
         run: >-
           ./build/Invoke-PackageGate.ps1
           -Stage All
-          -Version '${{ steps.release-version.outputs.version }}'
+          -Version $env:RELEASE_VERSION
 
       - name: Upload verified release artifacts
         uses: actions/upload-artifact@v7
@@ -87,14 +114,19 @@ jobs:
           name: logleak-release-artifacts
           path: artifacts/gate/packages
           if-no-files-found: error
+          retention-days: 7
 
   publish:
     name: Publish exact release artifacts
-    needs: verify
-    runs-on: ubuntu-24.04
+    needs:
+      - resolve-version
+      - package
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
+    env:
+      RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
     steps:
       - name: Download verified release artifacts
         uses: actions/download-artifact@v8
@@ -110,7 +142,7 @@ jobs:
       - name: Validate exact artifact set
         shell: pwsh
         run: |
-          $version = '${{ needs.verify.outputs.version }}'
+          $version = $env:RELEASE_VERSION
           $expected = @(
             "KeelMatrix.LogLeak.$version.nupkg",
             "KeelMatrix.LogLeak.$version.snupkg"
@@ -130,7 +162,7 @@ jobs:
         shell: pwsh
         run: >-
           dotnet nuget push
-          artifacts/packages/KeelMatrix.LogLeak.${{ needs.verify.outputs.version }}.nupkg
+          artifacts/packages/KeelMatrix.LogLeak.${env:RELEASE_VERSION}.nupkg
           --source https://api.nuget.org/v3/index.json
           --api-key '${{ steps.nuget-login.outputs.NUGET_API_KEY }}'
 
@@ -138,6 +170,6 @@ jobs:
         shell: pwsh
         run: >-
           dotnet nuget push
-          artifacts/packages/KeelMatrix.LogLeak.${{ needs.verify.outputs.version }}.snupkg
+          artifacts/packages/KeelMatrix.LogLeak.${env:RELEASE_VERSION}.snupkg
           --source https://api.nuget.org/v3/index.json
           --api-key '${{ steps.nuget-login.outputs.NUGET_API_KEY }}'

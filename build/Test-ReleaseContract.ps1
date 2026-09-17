@@ -15,7 +15,8 @@ function New-Fixture {
         [Parameter(Mandatory)][string] $Path,
         [Parameter(Mandatory)][string] $Changelog,
         [string] $SourceVersion = '0.1.0',
-        [string] $InstallVersion = $SourceVersion
+        [string] $InstallVersion = $SourceVersion,
+        [string] $ShippingPackageVersion = '0.1.0'
     )
 
     New-Item -ItemType Directory -Force -Path (Join-Path $Path 'build') | Out-Null
@@ -33,6 +34,7 @@ function New-Fixture {
     @"
 <Project>
   <ItemGroup>
+    <PackageVersion Include="KeelMatrix.LogLeak" Version="[$ShippingPackageVersion]" />
     <PackageVersion Include="KeelMatrix.Telemetry" Version="[0.1.0]" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
   </ItemGroup>
@@ -68,11 +70,12 @@ function Invoke-Scenario {
         [string] $Version = '0.1.0',
         [string] $SourceVersion = '0.1.0',
         [string] $InstallVersion = $SourceVersion,
+        [string] $ShippingPackageVersion = '0.1.0',
         [string] $ExpectedDiagnostic
     )
 
     $scenarioRoot = Join-Path $fixtureRoot ($Name -replace '[^A-Za-z0-9-]', '-')
-    New-Fixture $scenarioRoot $Changelog $SourceVersion $InstallVersion
+    New-Fixture $scenarioRoot $Changelog $SourceVersion $InstallVersion $ShippingPackageVersion
 
     $arguments = @(
         '-NoProfile',
@@ -128,7 +131,50 @@ $finalizedChangelog = @"
 - Provides bounded sentinel verification for captured logging fields.
 "@
 
-$remediationChangelog = @"
+$remediationPhrases = @(
+    'now',
+    'no longer',
+    'not yet published',
+    'previously',
+    'formerly',
+    'used to',
+    'fixed',
+    'fixes',
+    'fixing',
+    'correction',
+    'corrected',
+    'resolved',
+    'resolution',
+    'addressed',
+    'addressing',
+    'this removes',
+    'this fixes',
+    'changed from',
+    'rectified',
+    'rectifying',
+    'replaces',
+    'replacing',
+    'revised',
+    'revising'
+)
+
+$capabilityWording = @(
+    'Provides bounded sentinel verification for captured logging fields.',
+    'Supports structured logging fields.',
+    'Reports safe finding metadata.',
+    'Uses deterministic capture limits.',
+    'Bounded exception and scope support.'
+)
+
+try {
+    New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
+    Invoke-Scenario -Name 'planned-unreleased-rejected' -Changelog $plannedChangelog -ShouldPass $false -ExpectedDiagnostic 'no finalized'
+    Invoke-Scenario -Name 'finalized-consistent-passes' -Changelog $finalizedChangelog -ShouldPass $true
+    Invoke-Scenario -Name 'changelog-package-mismatch-rejected' -Changelog $finalizedChangelog -ShouldPass $false -SourceVersion '0.1.1' -InstallVersion '0.1.1' -ExpectedDiagnostic "source property 'Version'"
+    Invoke-Scenario -Name 'shipping-package-version-mismatch-rejected' -Changelog $finalizedChangelog -ShouldPass $false -ShippingPackageVersion '0.1.1' -ExpectedDiagnostic "central shipping package 'KeelMatrix.LogLeak'"
+    for ($index = 0; $index -lt $remediationPhrases.Count; $index++) {
+        $phrase = $remediationPhrases[$index]
+        $changelog = @"
 # Changelog
 
 ## [Unreleased]
@@ -137,15 +183,24 @@ $remediationChangelog = @"
 
 ### Added
 
-- Fixed the diagnostic path.
+- Provides the initial capability; $phrase.
 "@
+        Invoke-Scenario -Name "first-release-remediation-$index" -Changelog $changelog -ShouldPass $false
+    }
+    for ($index = 0; $index -lt $capabilityWording.Count; $index++) {
+        $changelog = @"
+# Changelog
 
-try {
-    New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
-    Invoke-Scenario -Name 'planned-unreleased-rejected' -Changelog $plannedChangelog -ShouldPass $false -ExpectedDiagnostic 'no finalized'
-    Invoke-Scenario -Name 'finalized-consistent-passes' -Changelog $finalizedChangelog -ShouldPass $true
-    Invoke-Scenario -Name 'changelog-package-mismatch-rejected' -Changelog $finalizedChangelog -ShouldPass $false -SourceVersion '0.1.1' -InstallVersion '0.1.1' -ExpectedDiagnostic "source property 'Version'"
-    Invoke-Scenario -Name 'first-release-remediation-marker-rejected' -Changelog $remediationChangelog -ShouldPass $false -ExpectedDiagnostic 'remediation-history'
+## [Unreleased]
+
+## [0.1.0] - $releaseDate
+
+### Added
+
+- $($capabilityWording[$index])
+"@
+        Invoke-Scenario -Name "first-release-capability-$index" -Changelog $changelog -ShouldPass $true
+    }
     Write-Host 'Release contract scenarios passed.'
 }
 finally {
