@@ -5,6 +5,7 @@
     <IsTestProject>true</IsTestProject>
     <AssemblyName>KeelMatrix.LogLeak.Tests</AssemblyName>
     <RootNamespace>KeelMatrix.LogLeak.Tests</RootNamespace>
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)/LogLeak.Tests.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>

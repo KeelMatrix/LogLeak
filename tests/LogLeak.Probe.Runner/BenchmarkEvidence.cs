@@ -6,8 +6,8 @@ namespace LogLeak.Probe.Runner;
 
 internal static class BenchmarkEvidence
 {
-    private const string SupportedRuleId = "worst-normalized-sample-plus-headroom-v2";
-    private const string SupportedSchema = "benchmark-sample-set-v2";
+    private const string SupportedRuleId = "worst-normalized-sample-plus-headroom-v3";
+    private const string SupportedSchema = "benchmark-sample-set-v3";
     private const int RequiredSampleCount = 10;
     private const string PolicyFileName = "BENCHMARK-POLICY.md";
     private const string SampleSetFileName = "BenchmarkSamples.json";
@@ -185,10 +185,10 @@ internal static class BenchmarkEvidence
             failures.Add("policy does not include the fixed headroom design rationale.");
         }
 
-        const string expectedEstimator = "The live `--performance` gate measures a deterministic CPU reference workload and the product workload in the same process on every attempt, takes at least five attempts, and normalizes each product metric by that attempt's reference measurement before comparing the minimum normalized ratios with these derived thresholds. Raw absolute measurements remain visible as evidence; the closed normalized criterion reduces host-contention sensitivity without making the gate advisory.";
+        const string expectedEstimator = "The live `--performance` gate measures a deterministic CPU reference workload and the product workload in the same process on every attempt, takes an odd number of at least five attempts, and normalizes each product metric by that attempt's reference measurement before comparing the median normalized ratio with these derived thresholds. Raw absolute measurements and every per-attempt normalized ratio remain visible as evidence; the closed normalized criterion reduces host-contention sensitivity without making the gate advisory. A product/reference slowdown that affects both identically can normalize away, and only sustained regressions that move the median are detected.";
         if (!policy.Contains(expectedEstimator, StringComparison.Ordinal))
         {
-            failures.Add("policy does not explain the repeated-attempt minimum estimator.");
+            failures.Add("policy does not explain the repeated-attempt median estimator and its detection limits.");
         }
 
         ValidateSampleTable(sampleSet, policy, failures);
