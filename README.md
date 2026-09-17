@@ -37,6 +37,7 @@ Use synthetic values created only for tests. A planted value produces a safe `Lo
 - [Privacy](PRIVACY.md)
 - [Security](SECURITY.md)
 - [Development guide](docs/DEV.md)
+- [Release process](docs/RELEASE.md)
 
 ## Supported fields
 

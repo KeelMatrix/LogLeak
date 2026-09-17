@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+env:
+  KEELMATRIX_NO_TELEMETRY: '1'
+
+jobs:
+  verify:
+    name: Verify release candidate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.release-version.outputs.version }}
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@v7
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Derive and validate release version
+        id: release-version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if ($tag -notmatch '^v(?<version>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$') {
+            throw "Malformed release tag '$tag'. Expected vX.Y.Z."
+          }
+          $version = $Matches.version
+          $tagCommit = (git rev-parse --verify "refs/tags/$tag^{commit}").Trim()
+          if ($tagCommit -ne $env:GITHUB_SHA) {
+            throw "Tag '$tag' resolves to commit '$tagCommit', but GitHub checked out '$env:GITHUB_SHA'."
+          }
+          $commitDate = (git show -s --format=%cs $tagCommit).Trim()
+          if ($commitDate -notmatch '^\d{4}-\d{2}-\d{2}$') {
+            throw "Could not derive an ISO commit date for '$tag'."
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "release-date=$commitDate" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Validate release contract
+        shell: pwsh
+        run: >-
+          ./build/Validate-ReleaseContract.ps1
+          -Version '${{ steps.release-version.outputs.version }}'
+          -Tag '${{ github.ref_name }}'
+          -ExpectedReleaseDate '${{ steps.release-version.outputs.release-date }}'
+
+      - name: Restore
+        run: dotnet restore LogLeak.Probe.sln --configfile NuGet.config --no-cache --force
+
+      - name: Build Release
+        run: >-
+          dotnet build LogLeak.Probe.sln
+          --configuration Release
+          --no-restore
+          -p:Version=${{ steps.release-version.outputs.version }}
+          -p:PackageVersion=${{ steps.release-version.outputs.version }}
+
+      - name: Test shipping project
+        run: >-
+          dotnet test tests/KeelMatrix.LogLeak.Tests/KeelMatrix.LogLeak.Tests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+
+      - name: Pack, inspect, and smoke-test exact artifacts
+        shell: pwsh
+        run: >-
+          ./build/Invoke-PackageGate.ps1
+          -Stage All
+          -Version '${{ steps.release-version.outputs.version }}'
+
+      - name: Upload verified release artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: logleak-release-artifacts
+          path: artifacts/gate/packages
+          if-no-files-found: error
+
+  publish:
+    name: Publish exact release artifacts
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download verified release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: logleak-release-artifacts
+          path: artifacts/packages
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate exact artifact set
+        shell: pwsh
+        run: |
+          $version = '${{ needs.verify.outputs.version }}'
+          $expected = @(
+            "KeelMatrix.LogLeak.$version.nupkg",
+            "KeelMatrix.LogLeak.$version.snupkg"
+          ) | Sort-Object
+          $actual = @(Get-ChildItem -LiteralPath artifacts/packages -File | Select-Object -ExpandProperty Name | Sort-Object)
+          if ($actual.Count -ne $expected.Count -or (Compare-Object -ReferenceObject $expected -DifferenceObject $actual)) {
+            throw "Unexpected release artifact set. Expected: $($expected -join ', '); actual: $($actual -join ', ')."
+          }
+
+      - name: Authenticate to NuGet.org with Trusted Publishing
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: dmitriyzen
+
+      - name: Publish package
+        shell: pwsh
+        run: >-
+          dotnet nuget push
+          artifacts/packages/KeelMatrix.LogLeak.${{ needs.verify.outputs.version }}.nupkg
+          --source https://api.nuget.org/v3/index.json
+          --api-key '${{ steps.nuget-login.outputs.NUGET_API_KEY }}'
+
+      - name: Publish symbols package
+        shell: pwsh
+        run: >-
+          dotnet nuget push
+          artifacts/packages/KeelMatrix.LogLeak.${{ needs.verify.outputs.version }}.snupkg
+          --source https://api.nuget.org/v3/index.json
+          --api-key '${{ steps.nuget-login.outputs.NUGET_API_KEY }}'

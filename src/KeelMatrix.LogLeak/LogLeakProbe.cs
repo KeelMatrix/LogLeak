@@ -633,7 +633,7 @@ public sealed class LogLeakProbe : IDisposable
         {
             if (formatter is null)
             {
-            ThrowIfNull(formatter, nameof(formatter));
+                ThrowIfNull(formatter, nameof(formatter));
             }
 
             if (IsEnabled(logLevel))
