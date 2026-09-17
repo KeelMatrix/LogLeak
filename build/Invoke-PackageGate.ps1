@@ -433,7 +433,7 @@ using KeelMatrix.LogLeak;
 using Microsoft.Extensions.Logging;
 
 using var cleanProbe = new LogLeakProbe()
-    .AddSecret("clean", "synthetic-consumer-clean-18c2");
+    .AddSecret("probe-pass", "synthetic-consumer-clean-18c2");
 using (var cleanFactory = LoggerFactory.Create(builder => builder.AddProvider(cleanProbe.Provider)))
 {
     cleanFactory.CreateLogger("PackageConsumer").LogInformation("safe package event");
@@ -442,7 +442,7 @@ using (var cleanFactory = LoggerFactory.Create(builder => builder.AddProvider(cl
 
 const string plantedValue = "synthetic-consumer-planted-91de";
 using var plantedProbe = new LogLeakProbe()
-    .AddSecret("planted", plantedValue);
+    .AddSecret("leak", plantedValue);
 using (var plantedFactory = LoggerFactory.Create(builder => builder.AddProvider(plantedProbe.Provider)))
 {
     plantedFactory.CreateLogger("PackageConsumer").LogInformation("planted value {Value}", plantedValue);
@@ -462,7 +462,7 @@ using (var plantedFactory = LoggerFactory.Create(builder => builder.AddProvider(
         throw new InvalidOperationException("The assertion diagnostic contained the planted value.");
     }
 
-    if (!diagnostic.Contains("Sentinel label 'planted'", StringComparison.Ordinal))
+    if (!diagnostic.Contains("Sentinel label 'leak'", StringComparison.Ordinal))
     {
         throw new InvalidOperationException("The assertion diagnostic did not identify the planted registration.");
     }

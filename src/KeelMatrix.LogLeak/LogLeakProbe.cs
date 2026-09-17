@@ -61,7 +61,12 @@ public sealed class LogLeakProbe : IDisposable
     /// <param name="label">A short safe identifier used in findings.</param>
     /// <param name="value">The exact non-empty value to match in supported logging fields.</param>
     /// <returns>This probe, to support concise setup.</returns>
-    /// <remarks>Labels are limited to 64 characters and may contain letters, digits, hyphens, underscores, periods, and colons.</remarks>
+    /// <remarks>
+    /// Labels are limited to 64 characters and may contain letters, digits, hyphens, underscores, periods, and colons.
+    /// No registered label may textually contain a registered value, and no registered value may textually contain a
+    /// registered label. These checks use exact ordinal comparison (case-sensitive, with no normalization) and run at
+    /// every registration in either registration order.
+    /// </remarks>
     /// <exception cref="LogLeakConfigurationException">Thrown when the label or value is invalid.</exception>
     /// <exception cref="LogLeakDisposedException">Thrown when the probe has been disposed.</exception>
     public LogLeakProbe AddSecret(string label, string value)
@@ -88,7 +93,12 @@ public sealed class LogLeakProbe : IDisposable
             }
 
             if (ContainsOrdinal(label, value)
-                || sentinels.Any(existing => ContainsOrdinal(label, existing.Value) || ContainsOrdinal(existing.Label, value)))
+                || ContainsOrdinal(value, label)
+                || sentinels.Any(existing =>
+                    ContainsOrdinal(label, existing.Value)
+                    || ContainsOrdinal(existing.Value, label)
+                    || ContainsOrdinal(existing.Label, value)
+                    || ContainsOrdinal(value, existing.Label)))
             {
                 throw new LogLeakConfigurationException("Sentinel labels and values must not overlap.");
             }
