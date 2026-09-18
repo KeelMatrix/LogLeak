@@ -76,22 +76,63 @@ internal static class BenchmarkEvidence
             throw new InvalidOperationException("Benchmark provenance check failed:\n- " + string.Join("\n- ", failures));
         }
 
-        Console.WriteLine($"PASS benchmark threshold binding: live gate consumes normalized emit {FormatRatio(liveStatistics.EmitNormalizedThreshold)}, matching {FormatRatio(liveStatistics.MatchingNormalizedThreshold)}, memory {FormatRatio(liveStatistics.MemoryNormalizedThreshold)} ratio units from the committed sample-set recomputation.");
-        Console.WriteLine($"PASS benchmark provenance: samples={sampleSet!.Samples.Count}; normalized median=emit {FormatRatio(statistics.EmitNormalizedMedian)}, matching {FormatRatio(statistics.MatchingNormalizedMedian)}, memory {FormatRatio(statistics.MemoryNormalizedMedian)}; normalized worst=emit {FormatRatio(statistics.EmitNormalizedWorst)}, matching {FormatRatio(statistics.MatchingNormalizedWorst)}, memory {FormatRatio(statistics.MemoryNormalizedWorst)}; normalized thresholds=emit {FormatRatio(statistics.EmitNormalizedThreshold)}, matching {FormatRatio(statistics.MatchingNormalizedThreshold)}, memory {FormatRatio(statistics.MemoryNormalizedThreshold)}; rule={sampleSet.Rule.RuleId}; headroom={sampleSet.Rule.HeadroomPercent}%.");
+        var cpuBindingMessage = $"PASS benchmark CPU threshold binding: live gate consumes normalized emit {FormatRatio(liveStatistics.EmitNormalizedThreshold)}, matching {FormatRatio(liveStatistics.MatchingNormalizedThreshold)} ratio units from the committed sample-set recomputation.";
+        var provenanceMessage = $"PASS benchmark provenance: samples={sampleSet!.Samples.Count}; normalized median=emit {FormatRatio(statistics.EmitNormalizedMedian)}, matching {FormatRatio(statistics.MatchingNormalizedMedian)}; normalized worst=emit {FormatRatio(statistics.EmitNormalizedWorst)}, matching {FormatRatio(statistics.MatchingNormalizedWorst)}; normalized CPU thresholds=emit {FormatRatio(statistics.EmitNormalizedThreshold)}, matching {FormatRatio(statistics.MatchingNormalizedThreshold)}; rule={sampleSet.Rule.RuleId}; headroom={sampleSet.Rule.HeadroomPercent}%.";
+        var diagnosticReferenceMessage = $"PASS benchmark diagnostic reference: sampled heap normalized diagnostic reference={FormatRatio(statistics.MemoryNormalizedDiagnosticReference)} ratio units; retained for provenance and diagnosis only and does not decide pass/fail.";
+        ValidateProvenanceOutput(cpuBindingMessage, provenanceMessage, diagnosticReferenceMessage, failures);
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException("Benchmark provenance check failed:\n- " + string.Join("\n- ", failures));
+        }
+
+        Console.WriteLine(cpuBindingMessage);
+        Console.WriteLine(provenanceMessage);
+        Console.WriteLine(diagnosticReferenceMessage);
     }
 
     private static void ValidateLiveThresholdBinding(BenchmarkStatistics liveStatistics, BenchmarkStatistics recomputedStatistics, List<string> failures)
     {
-        CompareThreshold("normalized emit", liveStatistics.EmitNormalizedThreshold, recomputedStatistics.EmitNormalizedThreshold, failures);
-        CompareThreshold("normalized matching", liveStatistics.MatchingNormalizedThreshold, recomputedStatistics.MatchingNormalizedThreshold, failures);
-        CompareThreshold("normalized memory", liveStatistics.MemoryNormalizedThreshold, recomputedStatistics.MemoryNormalizedThreshold, failures);
+        CompareCpuThreshold("normalized emit", liveStatistics.EmitNormalizedThreshold, recomputedStatistics.EmitNormalizedThreshold, failures);
+        CompareCpuThreshold("normalized matching", liveStatistics.MatchingNormalizedThreshold, recomputedStatistics.MatchingNormalizedThreshold, failures);
+        CompareDiagnosticReference("normalized sampled heap", liveStatistics.MemoryNormalizedDiagnosticReference, recomputedStatistics.MemoryNormalizedDiagnosticReference, failures);
     }
 
-    private static void CompareThreshold(string name, double consumed, double recomputed, List<string> failures)
+    private static void CompareCpuThreshold(string name, double consumed, double recomputed, List<string> failures)
     {
         if (!NearlyEqual(consumed, recomputed))
         {
             failures.Add($"live gate {name} threshold is {FormatRatio(consumed)}, but recomputation from the committed sample set is {FormatRatio(recomputed)}.");
+        }
+    }
+
+    private static void CompareDiagnosticReference(string name, double consumed, double recomputed, List<string> failures)
+    {
+        if (!NearlyEqual(consumed, recomputed))
+        {
+            failures.Add($"live gate {name} diagnostic reference is {FormatRatio(consumed)}, but recomputation from the committed sample set is {FormatRatio(recomputed)}; this sampled heap value is a diagnostic reference, not a threshold.");
+        }
+    }
+
+    private static void ValidateProvenanceOutput(string cpuBindingMessage, string provenanceMessage, string diagnosticReferenceMessage, List<string> failures)
+    {
+        if (cpuBindingMessage.Contains("memory", StringComparison.OrdinalIgnoreCase)
+            || cpuBindingMessage.Contains("heap", StringComparison.OrdinalIgnoreCase))
+        {
+            failures.Add("CPU threshold binding output must not describe a sampled-heap value as consumed by the live gate.");
+        }
+
+        if (provenanceMessage.Contains("memory", StringComparison.OrdinalIgnoreCase)
+            || provenanceMessage.Contains("heap", StringComparison.OrdinalIgnoreCase)
+            || provenanceMessage.Contains("normalized thresholds=", StringComparison.Ordinal))
+        {
+            failures.Add("benchmark provenance output must keep sampled-heap diagnostics out of the enforced CPU threshold summary.");
+        }
+
+        if (!diagnosticReferenceMessage.Contains("diagnostic reference", StringComparison.Ordinal)
+            || !diagnosticReferenceMessage.Contains("does not decide pass/fail", StringComparison.Ordinal)
+            || diagnosticReferenceMessage.Contains("threshold", StringComparison.OrdinalIgnoreCase))
+        {
+            failures.Add("sampled-heap provenance output must identify the value as a diagnostic reference that does not decide pass/fail, never as an enforced threshold.");
         }
     }
 
@@ -315,7 +356,7 @@ internal static class BenchmarkEvidence
         var margin = 1 + sampleSet.Rule.HeadroomPercent / 100d;
         var emitThreshold = Math.Ceiling(normalizedEmitWorst * margin / sampleSet.Rule.NormalizedRounding) * sampleSet.Rule.NormalizedRounding;
         var matchingThreshold = Math.Ceiling(normalizedMatchingWorst * margin / sampleSet.Rule.NormalizedRounding) * sampleSet.Rule.NormalizedRounding;
-        var memoryThreshold = Math.Ceiling(normalizedMemoryWorst * margin / sampleSet.Rule.NormalizedRounding) * sampleSet.Rule.NormalizedRounding;
+        var memoryDiagnosticReference = Math.Ceiling(normalizedMemoryWorst * margin / sampleSet.Rule.NormalizedRounding) * sampleSet.Rule.NormalizedRounding;
         return new BenchmarkStatistics(
             sampleSet.Samples.Count,
             sampleSet.Rule.HeadroomPercent / 100d,
@@ -336,7 +377,7 @@ internal static class BenchmarkEvidence
             normalizedMemoryWorst,
             emitThreshold,
             matchingThreshold,
-            memoryThreshold);
+            memoryDiagnosticReference);
     }
 
     private static void PrintStatistics(BenchmarkStatistics statistics)
@@ -408,5 +449,5 @@ internal static class BenchmarkEvidence
         double MemoryNormalizedWorst,
         double EmitNormalizedThreshold,
         double MatchingNormalizedThreshold,
-        double MemoryNormalizedThreshold);
+        double MemoryNormalizedDiagnosticReference);
 }
