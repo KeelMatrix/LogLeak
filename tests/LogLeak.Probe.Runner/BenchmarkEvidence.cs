@@ -167,13 +167,13 @@ internal static class BenchmarkEvidence
             CompareMetadata(metadata, sampleSet.Rule, failures);
         }
 
-        var expectedFormula = $"threshold = ceiling(worst normalized sample × {1 + sampleSet.Rule.HeadroomPercent / 100d:0.##})";
+        var expectedFormula = $"CPU threshold = ceiling(worst normalized sample × {1 + sampleSet.Rule.HeadroomPercent / 100d:0.##})";
         if (!policy.Contains(expectedFormula, StringComparison.Ordinal))
         {
             failures.Add($"policy rule text does not state the implemented formula '{expectedFormula}'.");
         }
 
-        var expectedRounding = $"Normalized thresholds round upward to the next {sampleSet.Rule.NormalizedRounding.ToString("0.###", CultureInfo.InvariantCulture)} ratio unit. The {sampleSet.Rule.HeadroomPercent}% headroom is applied to the worst normalized value, not to a single favorable observation and not to the current run.";
+        var expectedRounding = $"Normalized CPU thresholds round upward to the next {sampleSet.Rule.NormalizedRounding.ToString("0.###", CultureInfo.InvariantCulture)} ratio unit. The {sampleSet.Rule.HeadroomPercent}% headroom is applied to the worst normalized value, not to a single favorable observation and not to the current run.";
         if (!policy.Contains(expectedRounding, StringComparison.Ordinal))
         {
             failures.Add("policy rounding or headroom statement does not match the committed rule.");
@@ -185,7 +185,7 @@ internal static class BenchmarkEvidence
             failures.Add("policy does not include the fixed headroom design rationale.");
         }
 
-        const string expectedEstimator = "The live `--performance` gate measures a deterministic CPU reference workload and the product workload in the same process on every attempt, takes an odd number of at least five attempts, and normalizes each product metric by that attempt's reference measurement before comparing the median normalized ratio with these derived thresholds. Raw absolute measurements and every per-attempt normalized ratio remain visible as evidence; the closed normalized criterion reduces host-contention sensitivity without making the gate advisory. A product/reference slowdown that affects both identically can normalize away, and only sustained regressions that move the median are detected.";
+        const string expectedEstimator = "The live `--performance` gate measures a deterministic CPU reference workload and the product workload in the same process on every attempt, takes an odd number of at least five attempts, and normalizes each CPU metric by that attempt's reference measurement before comparing the median normalized ratio with these derived thresholds. Raw absolute measurements, sampled heap observations, and every per-attempt normalized ratio remain visible as evidence; the closed normalized CPU criterion reduces host-contention sensitivity without making the gate advisory. A product/reference slowdown that affects both identically can normalize away, and only sustained regressions that move the median are detected.";
         if (!policy.Contains(expectedEstimator, StringComparison.Ordinal))
         {
             failures.Add("policy does not explain the repeated-attempt median estimator and its detection limits.");
@@ -196,7 +196,7 @@ internal static class BenchmarkEvidence
         RequirePolicySummary(policy, $"- Median normalized: emit `{FormatRatio(statistics.EmitNormalizedMedian)}`, matching `{FormatRatio(statistics.MatchingNormalizedMedian)}`, sampled heap delta `{FormatRatio(statistics.MemoryNormalizedMedian)}` ratio units.", "normalized median", failures);
         RequirePolicySummary(policy, $"- Worst raw: reference `{statistics.ReferenceWorstMilliseconds:F2} ms`, emit `{statistics.EmitWorstMilliseconds:F2} ms`, matching `{statistics.MatchingWorstMilliseconds:F2} ms`, sampled heap delta `{statistics.MemoryWorstBytes:N0} bytes`.", "raw worst", failures);
         RequirePolicySummary(policy, $"- Worst normalized: emit `{FormatRatio(statistics.EmitNormalizedWorst)}`, matching `{FormatRatio(statistics.MatchingNormalizedWorst)}`, sampled heap delta `{FormatRatio(statistics.MemoryNormalizedWorst)}` ratio units.", "normalized worst", failures);
-        RequirePolicySummary(policy, $"- Derived normalized thresholds: emit `{FormatRatio(statistics.EmitNormalizedThreshold)}`, matching `{FormatRatio(statistics.MatchingNormalizedThreshold)}`, sampled heap delta `{FormatRatio(statistics.MemoryNormalizedThreshold)}` ratio units.", "threshold", failures);
+        RequirePolicySummary(policy, $"- Derived normalized CPU thresholds: emit `{FormatRatio(statistics.EmitNormalizedThreshold)}`, matching `{FormatRatio(statistics.MatchingNormalizedThreshold)}`. The committed sampled-heap reference is retained for provenance and diagnostic comparison only.", "threshold", failures);
 
         RequirePolicySummary(policy, "Earlier pre-release revisions of this probe set wrote threshold values directly (margin 75%, then 125%). Those hand-set values are superseded: thresholds are now derived from the committed sample set by the fixed rule, and a threshold or margin change requires a committed sample-set or policy change with the recompute check passing.", "provenance", failures);
     }

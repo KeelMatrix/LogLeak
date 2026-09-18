@@ -423,6 +423,7 @@ function Invoke-Smoke {
     </packageSource>
     <packageSource key="nuget.org">
       <package pattern="KeelMatrix.Telemetry" />
+      <package pattern="Microsoft.AspNetCore.*" />
       <package pattern="Microsoft.Extensions.*" />
       <package pattern="System.*" />
       <package pattern="runtime.*" />
