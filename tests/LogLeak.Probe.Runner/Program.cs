@@ -634,7 +634,8 @@ internal static class Program
         var statistics = BenchmarkEvidence.CommittedStatistics;
         BenchmarkEvidence.PrintSampleSet();
         Console.WriteLine($"sample policy: CPU threshold = ceiling(worst normalized sample x (1 + {statistics.HeadroomFraction:P0})), rounded to the next {statistics.NormalizedRounding:0.##} ratio unit; this policy is fixed before the measured gate run.");
-        Console.WriteLine($"derived normalized threshold: emit={statistics.EmitNormalizedThreshold:F2}; matching={statistics.MatchingNormalizedThreshold:F2}; sampled heap delta={statistics.MemoryNormalizedThreshold:F2} ratio units");
+        Console.WriteLine($"derived normalized CPU thresholds: emit={statistics.EmitNormalizedThreshold:F2}; matching={statistics.MatchingNormalizedThreshold:F2} ratio units");
+        Console.WriteLine($"derived sampled heap diagnostic reference: {statistics.MemoryNormalizedDiagnosticReference:F2} ratio units; does not decide benchmark pass/fail.");
         Console.WriteLine();
     }
 
@@ -665,13 +666,14 @@ internal static class Program
         Console.WriteLine($"benchmark host: calibration=Windows x64, target=net8.0, runtime={RuntimeInformation.FrameworkDescription}, observed-host={RuntimeInformation.OSDescription}, process={RuntimeInformation.ProcessArchitecture}; normalized ratios are environment-relative, not cross-platform performance guarantees.");
         Console.WriteLine($"benchmark policy: CPU thresholds = ceiling(worst normalized sample x (1 + {statistics.HeadroomFraction:P0})), rounded to the next {statistics.NormalizedRounding:0.##} ratio unit; fixed before this measured gate run. Sampled heap delta is diagnostic evidence only because GC accounting differs by OS/runtime.");
         Console.WriteLine($"benchmark sample basis: committed sample set; samples={statistics.SampleCount}; median raw reference={statistics.ReferenceMedianMilliseconds:F2} ms, emit={statistics.EmitMedianMilliseconds:F2} ms, matching={statistics.MatchingMedianMilliseconds:F2} ms, sampled heap delta={statistics.MemoryMedianBytes:N0} bytes; normalized worst emit={statistics.EmitNormalizedWorst:F2}, matching={statistics.MatchingNormalizedWorst:F2}, sampled heap delta={statistics.MemoryNormalizedWorst:F2} ratio units.");
-        Console.WriteLine($"benchmark derived normalized CPU threshold: emit={statistics.EmitNormalizedThreshold:F2}; matching={statistics.MatchingNormalizedThreshold:F2}; sampled heap reference={statistics.MemoryNormalizedThreshold:F2} ratio units");
+        Console.WriteLine($"benchmark derived normalized CPU thresholds: emit={statistics.EmitNormalizedThreshold:F2}; matching={statistics.MatchingNormalizedThreshold:F2}");
+        Console.WriteLine($"benchmark sampled heap diagnostic reference: {statistics.MemoryNormalizedDiagnosticReference:F2} ratio units; does not decide benchmark pass/fail.");
         Console.WriteLine($"benchmark statistic: median of {benchmarkAttempts} per-attempt normalized ratios; CPU pass/fail uses this central statistic; sampled heap delta is diagnostic.");
         Console.WriteLine($"benchmark raw median: reference={referenceElapsed:F2} ms; emit={emitElapsed:F2} ms; matching={matchingElapsed:F2} ms; sampled heap delta={retained:N0} bytes");
         Console.WriteLine($"benchmark normalized median: emit={normalizedEmit:F2}; matching={normalizedMatching:F2}; sampled heap delta={normalizedMemory:F2} ratio units");
         PrintBenchmarkGate("normalized emit", statistics.EmitNormalizedWorst, statistics.EmitNormalizedThreshold, normalizedEmit, "ratio", statistics.HeadroomFraction, emitPass);
         PrintBenchmarkGate("normalized matching", statistics.MatchingNormalizedWorst, statistics.MatchingNormalizedThreshold, normalizedMatching, "ratio", statistics.HeadroomFraction, matchingPass);
-        PrintBenchmarkObservation("sampled heap delta", statistics.MemoryNormalizedThreshold, normalizedMemory);
+        PrintBenchmarkObservation("sampled heap diagnostic observation", statistics.MemoryNormalizedDiagnosticReference, normalizedMemory);
         var benchmarkPass = emitPass && matchingPass;
         Console.WriteLine($"benchmark estimator: median of {benchmarkAttempts} same-process product and reference attempts; CPU pass/fail uses the median per-attempt normalized ratio. Capture count and per-event allocation guards remain deterministic resource checks.");
         Console.WriteLine($"benchmark verdict: {(benchmarkPass ? "PASS" : "FAIL")} - CPU dimensions must remain within the fixed host-relative thresholds; sampled heap delta is informational across OS/runtime implementations.");
