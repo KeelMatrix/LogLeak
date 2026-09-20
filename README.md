@@ -84,7 +84,7 @@ MIT
 
 ## Development
 
-The Phase 0 corpus runs against the shipping `KeelMatrix.LogLeak` implementation through `tests/LogLeak.Probe.Runner`:
+The shipping coverage corpus runs against the shipping `KeelMatrix.LogLeak` implementation through `tests/LogLeak.Probe.Runner`:
 
 ```text
 dotnet run --project tests/LogLeak.Probe.Runner/LogLeak.Probe.Runner.csproj -c Release --no-restore

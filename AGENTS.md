@@ -6,7 +6,7 @@
 - `tests/KeelMatrix.LogLeak.Tests` contains focused, product-level xUnit coverage for the shipping API.
 - `samples/KeelMatrix.LogLeak.AspNetCore` is a non-packable ASP.NET Core consumer example.
 - `tests/LogLeak.PackageConsumer` is an isolated package-reference smoke consumer and is not part of the solution.
-- `tests/LogLeak.Probe.*` and `tests/LogLeak.Probe.Runner` contain the Phase 0 corpus, bound to the shipping implementation.
+- `tests/LogLeak.Probe.*` and `tests/LogLeak.Probe.Runner` contain the shipping coverage corpus, bound to the shipping implementation.
 - `build/Invoke-PackageGate.ps1` is the reproducible Release pack, archive inspection, and isolated consumer gate.
 
 ## Validation
@@ -23,7 +23,7 @@ Run the package gate before handoff:
 pwsh ./build/Invoke-PackageGate.ps1 -Stage All
 ```
 
-Run the complete Phase 0 corpus against the shipping implementation:
+Run the complete shipping coverage corpus against the shipping implementation:
 
 ```text
 dotnet run --project tests/LogLeak.Probe.Runner/LogLeak.Probe.Runner.csproj -c Release --no-restore

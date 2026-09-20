@@ -26,7 +26,7 @@ internal static class Program
     {
         try
         {
-            Console.WriteLine("LogLeak shipping implementation Phase 0 corpus");
+            Console.WriteLine("LogLeak shipping implementation coverage corpus");
             Console.WriteLine("Supported fields: formatted message; string structured-property values; string scope values; exception representation.");
             Console.WriteLine("Matching: exact ordinal literal containment only; no decoding, normalization, hashing, encoding permutations, or object serialization.");
             Console.WriteLine();
@@ -775,7 +775,7 @@ internal static class Program
         Console.WriteLine("Supported/excluded field contract: PASS - {OriginalFormat} is excluded metadata and recorded excluded-field fixtures match the classifier output.");
         Console.WriteLine($"Benchmark overhead acceptable: PASS - normalized CPU thresholds derive mechanically from the committed {statistics.SampleCount}-sample reference-relative baseline with {statistics.HeadroomFraction:P0} headroom; raw and normalized measurements are printed above. Sampled heap delta is informational across OS/runtime implementations.");
         Console.WriteLine("Diagnostic coverage: PASS within shipping probe-owned and simulated output paths; the isolated package consumer validates the built package boundary.");
-        Console.WriteLine("The Phase 0 corpus is bound to the shipping implementation; no separate probe contract remains.");
+        Console.WriteLine("The shipping coverage corpus is bound to the shipping implementation; no separate probe contract remains.");
     }
 
     private static LogLeakProbe NewProbe(int maximumEvents, int maximumSentinels = 128, int maximumFindings = MaximumFindingsTotal, int maximumPayloadCharacters = MaximumPayloadCharacters, int maximumInspectionUnitsPerEvent = MaximumInspectionUnitsPerEvent, int maximumFindingsPerEvent = MaximumFindingsPerEvent, long maximumTransientAllocationBytes = MaximumTransientAllocationBytes, LogLeakProbe.ILogLeakTelemetry? telemetry = null)
