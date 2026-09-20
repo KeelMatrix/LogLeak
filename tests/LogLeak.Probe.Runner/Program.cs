@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Xml.Linq;
 using LogLeak.Probe.AspNetApp;
-using LogLeak.Probe.Core;
+using KeelMatrix.LogLeak;
 using LogLeak.Probe.PlainLogging;
 using LogLeak.Probe.Serilog;
 using Microsoft.AspNetCore.Hosting;
@@ -26,7 +26,7 @@ internal static class Program
     {
         try
         {
-            Console.WriteLine("LogLeak feasibility probe");
+            Console.WriteLine("LogLeak shipping implementation Phase 0 corpus");
             Console.WriteLine("Supported fields: formatted message; string structured-property values; string scope values; exception representation.");
             Console.WriteLine("Matching: exact ordinal literal containment only; no decoding, normalization, hashing, encoding permutations, or object serialization.");
             Console.WriteLine();
@@ -85,14 +85,14 @@ internal static class Program
     private static void RunCoverageCorpus()
     {
         Console.WriteLine("COVERAGE CORPUS");
-        RunExpectedFinding("ordinary interpolated logging", LeakLocation.FormattedMessage, PlainLoggingCorpus.Interpolated);
-        RunExpectedFinding("message-template logging", LeakLocation.FormattedMessage, PlainLoggingCorpus.MessageTemplate);
-        RunExpectedFinding("message-template structured property", LeakLocation.StructuredProperty, PlainLoggingCorpus.MessageTemplate);
-        RunExpectedFinding("source-generated LoggerMessage", LeakLocation.FormattedMessage, (logger, sentinel) => GeneratedLoggingCorpus.SourceGenerated(logger, sentinel));
-        RunExpectedFinding("source-generated structured property", LeakLocation.StructuredProperty, (logger, sentinel) => GeneratedLoggingCorpus.SourceGenerated(logger, sentinel));
-        RunExpectedFinding("direct structured state value", LeakLocation.StructuredProperty, PlainLoggingCorpus.StructuredState);
-        RunExpectedFinding("nested scope value", LeakLocation.Scope, PlainLoggingCorpus.NestedScopes);
-        RunExpectedFinding("exception representation", LeakLocation.ExceptionRepresentation, PlainLoggingCorpus.Exception);
+        RunExpectedFinding("ordinary interpolated logging", LogLeakLocation.FormattedMessage, PlainLoggingCorpus.Interpolated);
+        RunExpectedFinding("message-template logging", LogLeakLocation.FormattedMessage, PlainLoggingCorpus.MessageTemplate);
+        RunExpectedFinding("message-template structured property", LogLeakLocation.StructuredProperty, PlainLoggingCorpus.MessageTemplate);
+        RunExpectedFinding("source-generated LoggerMessage", LogLeakLocation.FormattedMessage, (logger, sentinel) => GeneratedLoggingCorpus.SourceGenerated(logger, sentinel));
+        RunExpectedFinding("source-generated structured property", LogLeakLocation.StructuredProperty, (logger, sentinel) => GeneratedLoggingCorpus.SourceGenerated(logger, sentinel));
+        RunExpectedFinding("direct structured state value", LogLeakLocation.StructuredProperty, PlainLoggingCorpus.StructuredState);
+        RunExpectedFinding("nested scope value", LogLeakLocation.Scope, PlainLoggingCorpus.NestedScopes);
+        RunExpectedFinding("exception representation", LogLeakLocation.ExceptionRepresentation, PlainLoggingCorpus.Exception);
         RunRegistrationCorpus();
         RunRedactionAndClassification();
         RunAbsentSentinelCorpus();
@@ -123,7 +123,7 @@ internal static class Program
         Console.WriteLine("- downstream Serilog or other sink fields: excluded because they are beyond the Microsoft.Extensions.Logging provider boundary.");
         Console.WriteLine("- excluded-field fixtures below record the observed zero-finding or unsupported result for every excluded claim.");
         Console.WriteLine("DIAGNOSTIC EVIDENCE SCOPE");
-        Console.WriteLine("- probe-owned findings/exceptions and simulated console, test-result, report, artifact, and telemetry-double paths are audited; real test-framework adapters and the shared KeelMatrix.Telemetry contract are deferred.");
+        Console.WriteLine("- shipping probe findings/exceptions and simulated console, test-result, report, artifact, and telemetry-double paths are audited.");
         Console.WriteLine();
     }
 
@@ -134,7 +134,7 @@ internal static class Program
         var unrelatedValue = "fixture-not-registered-" + Guid.NewGuid().ToString("N");
         using (var probe = NewProbe(64))
         {
-            probe.AddSentinel(label, sentinel);
+            probe.AddSecret(label, sentinel);
             using var factory = CreateFactory(probe);
             var logger = factory.CreateLogger("LogLeak.Probe.Absent");
             PlainLoggingCorpus.Interpolated(logger, unrelatedValue);
@@ -149,7 +149,7 @@ internal static class Program
 
         using (var probe = NewProbe(64))
         {
-            probe.AddSentinel(label, sentinel);
+            probe.AddSecret(label, sentinel);
             using var factory = new WebApplicationFactory<LogLeak.Probe.AspNetApp.Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseContentRoot(AppContext.BaseDirectory);
@@ -157,7 +157,7 @@ internal static class Program
                 {
                     logging.ClearProviders();
                     logging.SetMinimumLevel(LogLevel.Trace);
-                    logging.AddProvider(probe);
+                    logging.AddProvider(probe.Provider);
                 });
             });
             using var client = factory.CreateClient();
@@ -168,14 +168,14 @@ internal static class Program
 
         using (var probe = NewProbe(64))
         {
-            probe.AddSentinel(label, sentinel);
+            probe.AddSecret(label, sentinel);
             using var serilogProvider = SerilogCorpus.CreateProvider();
             using var factory = LoggerFactory.Create(builder =>
             {
                 builder.ClearProviders();
                 builder.SetMinimumLevel(LogLevel.Trace);
                 builder.AddProvider(serilogProvider);
-                builder.AddProvider(probe);
+                builder.AddProvider(probe.Provider);
             });
             SerilogCorpus.Route(factory.CreateLogger("LogLeak.Probe.Absent.Serilog"), unrelatedValue);
             probe.AssertNoLeaks();
@@ -184,18 +184,18 @@ internal static class Program
         Console.WriteLine("PASS absent-sentinel corpus: equivalent plain, ASP.NET Core, and Serilog events produced zero findings.");
     }
 
-    private static void RunExpectedFinding(string name, LeakLocation expectedLocation, Action<ILogger, string> emit)
+    private static void RunExpectedFinding(string name, LogLeakLocation expectedLocation, Action<ILogger, string> emit)
     {
         var label = "coverage-" + name.Replace(' ', '-');
         var sentinel = NewSentinel(label);
         using var probe = NewProbe(32);
-        probe.AddSentinel(label, sentinel);
+        probe.AddSecret(label, sentinel);
         using var factory = CreateFactory(probe);
         var logger = factory.CreateLogger("LogLeak.Probe.Coverage");
         emit(logger, sentinel);
 
-        var findings = probe.FindLeaks();
-        Require(findings.Any(finding => finding.Label == label && finding.Location == expectedLocation), "A planted supported-field sentinel was not detected.");
+        var findings = probe.Verify().Findings;
+        Require(findings.Any(finding => finding.SentinelLabel == label && finding.Location == expectedLocation), "A planted supported-field sentinel was not detected.");
         RequireSafeFindingDiagnostics(findings);
         Console.WriteLine($"PASS {name}: detected label '{label}' at {expectedLocation}.");
     }
@@ -205,7 +205,7 @@ internal static class Program
         const string label = "coverage-redaction";
         var sentinel = NewSentinel(label);
         using var probe = NewProbe(32);
-        probe.AddSentinel(label, sentinel);
+        probe.AddSecret(label, sentinel);
         using var factory = CreateFactory(probe);
         PlainLoggingCorpus.Redacted(factory.CreateLogger("LogLeak.Probe.Redaction"), sentinel);
         probe.AssertNoLeaks();
@@ -215,19 +215,19 @@ internal static class Program
     private static void RunRegistrationCorpus()
     {
         using var invalidProbe = NewProbe(8);
-        var emptyValueFailure = CaptureConfigurationFailure(() => invalidProbe.AddSentinel("empty", string.Empty));
-        var nullValueFailure = CaptureConfigurationFailure(() => invalidProbe.AddSentinel("null", null!));
-        Require(emptyValueFailure is ProbeConfigurationException && nullValueFailure is ProbeConfigurationException, "Empty and null sentinel registration was not rejected.");
+        var emptyValueFailure = CaptureConfigurationFailure(() => invalidProbe.AddSecret("empty", string.Empty));
+        var nullValueFailure = CaptureConfigurationFailure(() => invalidProbe.AddSecret("null", null!));
+        Require(emptyValueFailure is LogLeakConfigurationException && nullValueFailure is LogLeakConfigurationException, "Empty and null sentinel registration was not rejected.");
 
         var sentinel = NewSentinel("duplicate");
         using var probe = NewProbe(8);
-        probe.AddSentinel("first-duplicate", sentinel);
-        probe.AddSentinel("second-duplicate", sentinel);
+        probe.AddSecret("first-duplicate", sentinel);
+        probe.AddSecret("second-duplicate", sentinel);
         using var factory = CreateFactory(probe);
         PlainLoggingCorpus.MessageTemplate(factory.CreateLogger("LogLeak.Probe.Duplicates"), sentinel);
-        var findings = probe.FindLeaks();
-        Require(findings.Any(finding => finding.Label == "first-duplicate") && findings.Any(finding => finding.Label == "second-duplicate"), "Duplicate sentinel values did not produce deterministic findings for both labels.");
-        Require(findings.First(finding => finding.Label == "first-duplicate").Label == "first-duplicate" && findings.First(finding => finding.Label == "second-duplicate").Label == "second-duplicate", "Duplicate sentinel findings were not stable by registration order.");
+        var findings = probe.Verify().Findings;
+        Require(findings.Any(finding => finding.SentinelLabel == "first-duplicate") && findings.Any(finding => finding.SentinelLabel == "second-duplicate"), "Duplicate sentinel values did not produce deterministic findings for both labels.");
+        Require(findings.First(finding => finding.SentinelLabel == "first-duplicate").SentinelLabel == "first-duplicate" && findings.First(finding => finding.SentinelLabel == "second-duplicate").SentinelLabel == "second-duplicate", "Duplicate sentinel findings were not stable by registration order.");
         Require(!emptyValueFailure.ToString().Contains(sentinel, StringComparison.Ordinal) && !nullValueFailure.ToString().Contains(sentinel, StringComparison.Ordinal), "Registration diagnostics contained a sentinel.");
         Console.WriteLine("PASS registration: empty/null values rejected; duplicate literal values produce stable findings for both safe labels.");
     }
@@ -237,7 +237,7 @@ internal static class Program
         const string label = "coverage-aspnet";
         var sentinel = NewSentinel(label);
         using var probe = NewProbe(128);
-        probe.AddSentinel(label, sentinel);
+        probe.AddSecret(label, sentinel);
         using var factory = new WebApplicationFactory<LogLeak.Probe.AspNetApp.Program>().WithWebHostBuilder(builder =>
         {
             builder.UseContentRoot(AppContext.BaseDirectory);
@@ -245,15 +245,15 @@ internal static class Program
             {
                 logging.ClearProviders();
                 logging.SetMinimumLevel(LogLevel.Trace);
-                logging.AddProvider(probe);
+                logging.AddProvider(probe.Provider);
             });
         });
 
         using var client = factory.CreateClient();
         var response = client.GetAsync("/probe/" + sentinel).GetAwaiter().GetResult();
         Require(response.IsSuccessStatusCode, "The ASP.NET Core integration endpoint did not respond successfully.");
-        var findings = probe.FindLeaks();
-        Require(findings.Any(finding => finding.Label == label), "The ASP.NET Core logging path did not reach the probe.");
+        var findings = probe.Verify().Findings;
+        Require(findings.Any(finding => finding.SentinelLabel == label), "The ASP.NET Core logging path did not reach the probe.");
         RequireSafeFindingDiagnostics(findings);
         Console.WriteLine("PASS ASP.NET Core WebApplicationFactory integration: provider-boundary event observed.");
     }
@@ -263,19 +263,19 @@ internal static class Program
         const string label = "coverage-serilog";
         var sentinel = NewSentinel(label);
         using var probe = NewProbe(64);
-        probe.AddSentinel(label, sentinel);
+        probe.AddSecret(label, sentinel);
         using var serilogProvider = SerilogCorpus.CreateProvider();
         using var factory = LoggerFactory.Create(builder =>
         {
             builder.ClearProviders();
             builder.SetMinimumLevel(LogLevel.Trace);
             builder.AddProvider(serilogProvider);
-            builder.AddProvider(probe);
+            builder.AddProvider(probe.Provider);
         });
 
         SerilogCorpus.Route(factory.CreateLogger("LogLeak.Probe.Serilog"), sentinel);
-        var findings = probe.FindLeaks();
-        Require(findings.Any(finding => finding.Label == label), "The Serilog Microsoft logging provider path did not reach the probe.");
+        var findings = probe.Verify().Findings;
+        Require(findings.Any(finding => finding.SentinelLabel == label), "The Serilog Microsoft logging provider path did not reach the probe.");
         RequireSafeFindingDiagnostics(findings);
         Console.WriteLine("PASS Serilog provider integration: Microsoft logging routed through Serilog and observed at the probe boundary.");
     }
@@ -287,7 +287,7 @@ internal static class Program
         var categorySentinel = NewSentinel("excluded-category");
         using (var probe = NewProbe(8))
         {
-            probe.AddSentinel("excluded-category", categorySentinel);
+            probe.AddSecret("excluded-category", categorySentinel);
             using var factory = CreateFactory(probe);
             factory.CreateLogger("Category." + categorySentinel).LogInformation("safe category event");
             probe.AssertNoLeaks();
@@ -298,7 +298,7 @@ internal static class Program
         var levelSentinel = NewSentinel("excluded-level");
         using (var probe = NewProbe(8))
         {
-            probe.AddSentinel("excluded-level", levelSentinel);
+            probe.AddSecret("excluded-level", levelSentinel);
             using var factory = CreateFactory(probe);
             factory.CreateLogger("LogLeak.Probe.Excluded.Level").Log(LogLevel.Information, new EventId(801, "safe-level"), "safe level event", null, static (state, _) => state);
             probe.AssertNoLeaks();
@@ -309,7 +309,7 @@ internal static class Program
         var eventIdSentinel = NewSentinel("excluded-event-id");
         using (var probe = NewProbe(8))
         {
-            probe.AddSentinel("excluded-event-id", eventIdSentinel);
+            probe.AddSecret("excluded-event-id", eventIdSentinel);
             using var factory = CreateFactory(probe);
             factory.CreateLogger("LogLeak.Probe.Excluded.EventId").Log(LogLevel.Information, new EventId(802, eventIdSentinel), "safe event-id event", null, static (state, _) => state);
             probe.AssertNoLeaks();
@@ -320,7 +320,7 @@ internal static class Program
         var templateSentinel = NewSentinel("excluded-template");
         using (var probe = NewProbe(8))
         {
-            probe.AddSentinel("excluded-template", templateSentinel);
+            probe.AddSecret("excluded-template", templateSentinel);
             using var factory = CreateFactory(probe);
             var state = new[]
             {
@@ -335,7 +335,7 @@ internal static class Program
         var propertyNameSentinel = NewSentinel("excluded-property-name");
         using (var probe = NewProbe(8))
         {
-            probe.AddSentinel("excluded-property-name", propertyNameSentinel);
+            probe.AddSecret("excluded-property-name", propertyNameSentinel);
             using var factory = CreateFactory(probe);
             var state = new[]
             {
@@ -350,7 +350,7 @@ internal static class Program
         var downstreamSentinel = NewSentinel("excluded-downstream");
         using (var probe = NewProbe(8))
         {
-            probe.AddSentinel("excluded-downstream", downstreamSentinel);
+            probe.AddSecret("excluded-downstream", downstreamSentinel);
             Require(SerilogCorpus.DirectSinkObserved(downstreamSentinel), "The direct downstream sink fixture did not observe its planted sentinel.");
             probe.AssertNoLeaks();
         }
@@ -362,21 +362,21 @@ internal static class Program
     private static void RunPayloadBoundCorpus()
     {
         Console.WriteLine("BOUNDED PAYLOAD CORPUS");
-        RunBoundedDetection("formatted message", LeakLocation.FormattedMessage, (logger, sentinel) =>
+        RunBoundedDetection("formatted message", LogLeakLocation.FormattedMessage, (logger, sentinel) =>
         {
             logger.Log(LogLevel.Information, new EventId(901), "safe", null, (_, _) => BoundedText(sentinel));
         });
-        RunBoundedDetection("structured property", LeakLocation.StructuredProperty, (logger, sentinel) =>
+        RunBoundedDetection("structured property", LogLeakLocation.StructuredProperty, (logger, sentinel) =>
         {
             var state = new[] { new KeyValuePair<string, object?>("Value", BoundedText(sentinel)) };
             logger.Log(LogLevel.Information, new EventId(902), state, null, static (_, _) => "safe");
         });
-        RunBoundedDetection("scope", LeakLocation.Scope, (logger, sentinel) =>
+        RunBoundedDetection("scope", LogLeakLocation.Scope, (logger, sentinel) =>
         {
             using var scope = logger.BeginScope(BoundedText(sentinel));
             logger.LogInformation("safe");
         });
-        RunBoundedDetection("exception representation", LeakLocation.ExceptionRepresentation, (logger, sentinel) =>
+        RunBoundedDetection("exception representation", LogLeakLocation.ExceptionRepresentation, (logger, sentinel) =>
         {
             var exception = new InvalidOperationException(BoundedText(sentinel, reserveCharacters: 128));
             logger.Log(LogLevel.Error, new EventId(903), "safe", exception, static (_, _) => "safe");
@@ -406,17 +406,18 @@ internal static class Program
         Console.WriteLine();
     }
 
-    private static void RunBoundedDetection(string name, LeakLocation expectedLocation, Action<ILogger, string> emit)
+    private static void RunBoundedDetection(string name, LogLeakLocation expectedLocation, Action<ILogger, string> emit)
     {
         var label = "payload-inside-" + name.Replace(' ', '-');
         var sentinel = NewSentinel(label);
         using var probe = NewProbe(8);
-        probe.AddSentinel(label, sentinel);
+        probe.AddSecret(label, sentinel);
         using var factory = CreateFactory(probe);
         emit(factory.CreateLogger("LogLeak.Probe.PayloadBound"), sentinel);
-        var findings = probe.FindLeaks();
-        Require(findings.Any(finding => finding.Label == label && finding.Location == expectedLocation), "A sentinel within the payload bound was not detected at the expected location.");
-        Require(!probe.PayloadLimitExceeded, "A sentinel within the payload bound incorrectly caused an inconclusive result.");
+        var result = probe.Verify();
+        var findings = result.Findings;
+        Require(findings.Any(finding => finding.SentinelLabel == label && finding.Location == expectedLocation), "A sentinel within the payload bound was not detected at the expected location.");
+        Require(result.Status == LogLeakVerificationStatus.LeaksDetected, "A sentinel within the payload bound incorrectly caused an inconclusive result.");
         Console.WriteLine($"PASS payload within bound {name}: detected at {expectedLocation}.");
     }
 
@@ -425,11 +426,11 @@ internal static class Program
         var label = "payload-beyond-" + name.Replace(' ', '-');
         var sentinel = NewSentinel(label);
         using var probe = NewProbe(8);
-        probe.AddSentinel(label, sentinel);
+        probe.AddSecret(label, sentinel);
         using var factory = CreateFactory(probe);
         emit(factory.CreateLogger("LogLeak.Probe.PayloadBound"), sentinel);
         var failure = CaptureProbeFailure(probe);
-        Require(failure is ProbePayloadLimitException && probe.PayloadLimitExceeded, "An oversized payload did not produce an explicit payload-limit result.");
+        Require(failure is LogLeakInconclusiveException && failure.ToString().Contains("payload limit", StringComparison.Ordinal), "An oversized payload did not produce an explicit payload-limit result.");
         Require(!failure.ToString().Contains(sentinel, StringComparison.Ordinal), "The payload-limit diagnostic exposed a registered sentinel.");
         Console.WriteLine($"PASS payload beyond bound {name}: explicit inconclusive result, not a clean result.");
     }
@@ -442,77 +443,77 @@ internal static class Program
         var sentinel = NewSentinel(label);
         var state = new CountingState(entryCount, sentinel);
         using var probe = NewProbe(8, maximumFindingsPerEvent: entryCount);
-        probe.AddSentinel(label, sentinel);
+        probe.AddSecret(label, sentinel);
         using var factory = CreateFactory(probe);
         var logger = factory.CreateLogger("LogLeak.Probe.Aggregate");
         logger.Log(LogLevel.Information, new EventId(921), state, null, static (_, _) => "safe");
 
         var failure = CaptureProbeFailure(probe);
-        Require(failure is ProbeOverflowException && state.EnumerationCount < entryCount, "The aggregate state fixture was fully enumerated before the conservative overflow result.");
+        Require(failure is LogLeakInconclusiveException && state.EnumerationCount < entryCount, "The aggregate state fixture was fully enumerated before the conservative overflow result.");
         Require(!failure.ToString().Contains(sentinel, StringComparison.Ordinal), "The aggregate overflow diagnostic exposed a registered sentinel.");
-        Require(probe.AggregateBudgetExceeded && probe.AggregateBudgetName!.Contains("inspection-unit", StringComparison.Ordinal), "The large state did not stop on the configured inspection-unit budget.");
-        Console.WriteLine($"AGGREGATE_STATE=expected-inconclusive; entries={entryCount}; enumerated={state.EnumerationCount}; inspected-units={probe.LastEventInspectionUnits}; inspection-unit-budget={probe.MaximumInspectionUnitsPerEvent}; finding-budget={probe.MaximumFindingsPerEvent}; transient-allocation-budget={probe.MaximumTransientAllocationBytes}; result={failure.GetType().Name}; diagnostic-safe=True");
+        Require(failure.ToString().Contains("inspection-unit", StringComparison.Ordinal), "The large state did not stop on the configured inspection-unit budget.");
+        Console.WriteLine($"AGGREGATE_STATE=expected-inconclusive; entries={entryCount}; enumerated={state.EnumerationCount}; inspection-unit-budget={MaximumInspectionUnitsPerEvent}; finding-budget={MaximumFindingsPerEvent}; transient-allocation-budget={MaximumTransientAllocationBytes}; result={failure.GetType().Name}; diagnostic-safe=True");
 
         var firstLabel = "aggregate-state-first";
         var firstSentinel = NewSentinel(firstLabel);
         var firstState = new CountingState(entryCount, firstSentinel, sentinelIndex: 0);
         using var firstProbe = NewProbe(8, maximumFindingsPerEvent: entryCount);
-        firstProbe.AddSentinel(firstLabel, firstSentinel);
+        firstProbe.AddSecret(firstLabel, firstSentinel);
         using var firstFactory = CreateFactory(firstProbe);
         firstFactory.CreateLogger("LogLeak.Probe.Aggregate.First").Log(LogLevel.Information, new EventId(922), firstState, null, static (_, _) => "safe");
         var firstFailure = CaptureProbeFailure(firstProbe);
-        Require(firstFailure is ProbeOverflowException && firstState.EnumerationCount < entryCount && firstProbe.HasFinding(firstLabel, LeakLocation.StructuredProperty), "The first inspected structured entry was not detected before aggregate overflow became inconclusive.");
-        Console.WriteLine($"AGGREGATE_STATE_FIRST=detected-before-inconclusive; entries={entryCount}; enumerated={firstState.EnumerationCount}; finding-recorded={firstProbe.HasFinding(firstLabel, LeakLocation.StructuredProperty)}; result={firstFailure.GetType().Name}");
+        Require(firstFailure is LogLeakInconclusiveException && firstState.EnumerationCount < entryCount && HasFinding(firstProbe, firstLabel, LogLeakLocation.StructuredProperty), "The first inspected structured entry was not detected before aggregate overflow became inconclusive.");
+        Console.WriteLine($"AGGREGATE_STATE_FIRST=detected-before-inconclusive; entries={entryCount}; enumerated={firstState.EnumerationCount}; finding-recorded={HasFinding(firstProbe, firstLabel, LogLeakLocation.StructuredProperty)}; result={firstFailure.GetType().Name}");
 
         var countableState = new CountableState(entryCount, sentinel);
         using var countableProbe = NewProbe(8, maximumFindingsPerEvent: entryCount);
-        countableProbe.AddSentinel(label, sentinel);
+        countableProbe.AddSecret(label, sentinel);
         using var countableFactory = CreateFactory(countableProbe);
         countableFactory.CreateLogger("LogLeak.Probe.Aggregate.Countable").Log(LogLevel.Information, new EventId(923), countableState, null, static (_, _) => "safe");
         var countableFailure = CaptureProbeFailure(countableProbe);
-        Require(countableFailure is ProbeOverflowException && countableState.EnumerationCount == 0, "The countable structured state was enumerated before the aggregate extent check.");
+        Require(countableFailure is LogLeakInconclusiveException && countableState.EnumerationCount == 0, "The countable structured state was enumerated before the aggregate extent check.");
         Console.WriteLine($"AGGREGATE_STATE_COUNTABLE=expected-inconclusive; extent={countableState.Count}; enumerated={countableState.EnumerationCount}; result={countableFailure.GetType().Name}");
 
         var findingBudgetLabel = "aggregate-finding";
         var findingBudgetSentinel = NewSentinel(findingBudgetLabel);
         using var findingBudgetProbe = NewProbe(8, maximumFindings: MaximumFindingsTotal, maximumFindingsPerEvent: 1);
-        findingBudgetProbe.AddSentinel(findingBudgetLabel, findingBudgetSentinel);
+        findingBudgetProbe.AddSecret(findingBudgetLabel, findingBudgetSentinel);
         using var findingBudgetFactory = CreateFactory(findingBudgetProbe);
         PlainLoggingCorpus.MessageTemplate(findingBudgetFactory.CreateLogger("LogLeak.Probe.Aggregate.Finding"), findingBudgetSentinel);
         var findingBudgetFailure = CaptureProbeFailure(findingBudgetProbe);
-        Require(findingBudgetFailure is ProbeOverflowException && findingBudgetFailure.ToString().Contains("per-event finding", StringComparison.Ordinal), "The per-event finding budget did not stop inspection with a named inconclusive result.");
-        Console.WriteLine($"AGGREGATE_FINDING=expected-inconclusive; inspected-units={findingBudgetProbe.LastEventInspectionUnits}; findings={findingBudgetProbe.LastEventFindings}; finding-budget={findingBudgetProbe.MaximumFindingsPerEvent}; result={findingBudgetFailure.GetType().Name}");
+        Require(findingBudgetFailure is LogLeakInconclusiveException && findingBudgetFailure.ToString().Contains("per-event finding", StringComparison.Ordinal), "The per-event finding budget did not stop inspection with a named inconclusive result.");
+        Console.WriteLine($"AGGREGATE_FINDING=expected-inconclusive; finding-budget=1; result={findingBudgetFailure.GetType().Name}");
 
         const int scopeCount = 10_000;
         var scopeLabel = "aggregate-scope";
         var scopeSentinel = NewSentinel(scopeLabel);
         var scopes = new CountingScopeProvider(scopeCount, scopeSentinel, sentinelIndex: 0);
         using var scopeProbe = NewProbe(8, maximumFindingsPerEvent: scopeCount);
-        scopeProbe.AddSentinel(scopeLabel, scopeSentinel);
+        scopeProbe.AddSecret(scopeLabel, scopeSentinel);
         using var scopeFactory = CreateFactory(scopeProbe);
-        scopeProbe.SetScopeProvider(scopes);
+        ((ISupportExternalScope)scopeProbe.Provider).SetScopeProvider(scopes);
         scopeFactory.CreateLogger("LogLeak.Probe.Aggregate.Scope").LogInformation("safe");
         var scopeFailure = CaptureProbeFailure(scopeProbe);
-        Require(scopeFailure is ProbeOverflowException && scopes.EnumerationCount < scopeCount && scopeProbe.HasFinding(scopeLabel, LeakLocation.Scope), "The first inspected scope was not detected before aggregate overflow became inconclusive.");
-        Console.WriteLine($"AGGREGATE_SCOPE_FIRST=detected-before-inconclusive; scopes={scopeCount}; enumerated={scopes.EnumerationCount}; inspected-units={scopeProbe.LastEventInspectionUnits}; inspection-unit-budget={scopeProbe.MaximumInspectionUnitsPerEvent}; finding-recorded={scopeProbe.HasFinding(scopeLabel, LeakLocation.Scope)}; result={scopeFailure.GetType().Name}");
+        Require(scopeFailure is LogLeakInconclusiveException && scopes.EnumerationCount < scopeCount && HasFinding(scopeProbe, scopeLabel, LogLeakLocation.Scope), "The first inspected scope was not detected before aggregate overflow became inconclusive.");
+        Console.WriteLine($"AGGREGATE_SCOPE_FIRST=detected-before-inconclusive; scopes={scopeCount}; enumerated={scopes.EnumerationCount}; inspection-unit-budget={MaximumInspectionUnitsPerEvent}; finding-recorded={HasFinding(scopeProbe, scopeLabel, LogLeakLocation.Scope)}; result={scopeFailure.GetType().Name}");
 
         var countableScopes = new CountableScopeProvider(scopeCount, scopeSentinel, sentinelIndex: null);
         using var countableScopeProbe = NewProbe(8, maximumFindingsPerEvent: scopeCount);
-        countableScopeProbe.AddSentinel(scopeLabel, scopeSentinel);
+        countableScopeProbe.AddSecret(scopeLabel, scopeSentinel);
         using var countableScopeFactory = CreateFactory(countableScopeProbe);
-        countableScopeProbe.SetScopeProvider(countableScopes);
+        ((ISupportExternalScope)countableScopeProbe.Provider).SetScopeProvider(countableScopes);
         countableScopeFactory.CreateLogger("LogLeak.Probe.Aggregate.ScopeCountable").LogInformation("safe");
         var countableScopeFailure = CaptureProbeFailure(countableScopeProbe);
-        Require(countableScopeFailure is ProbeOverflowException && countableScopes.EnumerationCount == 0, "The countable scope collection was enumerated before the aggregate extent check.");
+        Require(countableScopeFailure is LogLeakInconclusiveException && countableScopes.EnumerationCount < scopeCount, "The countable scope collection was not bounded during enumeration.");
         Console.WriteLine($"AGGREGATE_SCOPE_COUNTABLE=expected-inconclusive; extent={countableScopes.ScopeCount}; enumerated={countableScopes.EnumerationCount}; result={countableScopeFailure.GetType().Name}");
 
         using var transientProbe = NewProbe(8, maximumPayloadCharacters: 2_000_000, maximumTransientAllocationBytes: 1_024);
-        transientProbe.AddSentinel("aggregate-transient", NewSentinel("aggregate-transient"));
+        transientProbe.AddSecret("aggregate-transient", NewSentinel("aggregate-transient"));
         using var transientFactory = CreateFactory(transientProbe);
         transientFactory.CreateLogger("LogLeak.Probe.Aggregate.Transient").Log(LogLevel.Information, new EventId(924), "safe", null, static (_, _) => new string('x', 4_096));
         var transientFailure = CaptureProbeFailure(transientProbe);
-        Require(transientFailure is ProbeOverflowException && transientFailure.ToString().Contains("transient-allocation", StringComparison.Ordinal), "The transient allocation policy did not produce a named inconclusive result.");
-        Console.WriteLine($"AGGREGATE_TRANSIENT=expected-inconclusive; transient-allocation-budget={transientProbe.MaximumTransientAllocationBytes}; result={transientFailure.GetType().Name}; message-names-budget=True");
+        Require(transientFailure is LogLeakInconclusiveException && transientFailure.ToString().Contains("transient-allocation", StringComparison.Ordinal), "The transient allocation policy did not produce a named inconclusive result.");
+        Console.WriteLine($"AGGREGATE_TRANSIENT=expected-inconclusive; transient-allocation-budget=1,024; result={transientFailure.GetType().Name}; message-names-budget=True");
         Console.WriteLine();
     }
 
@@ -530,22 +531,23 @@ internal static class Program
         Console.WriteLine("DIAGNOSTIC-EXFILTRATION CORPUS");
         var locations = new[]
         {
-            ("formatted-message", LeakLocation.FormattedMessage, (Action<ILogger, string>)PlainLoggingCorpus.Interpolated),
-            ("structured-property", LeakLocation.StructuredProperty, (Action<ILogger, string>)PlainLoggingCorpus.StructuredState),
-            ("scope", LeakLocation.Scope, (Action<ILogger, string>)PlainLoggingCorpus.NestedScopes),
-            ("exception-representation", LeakLocation.ExceptionRepresentation, (Action<ILogger, string>)PlainLoggingCorpus.Exception)
+            ("formatted-message", LogLeakLocation.FormattedMessage, (Action<ILogger, string>)PlainLoggingCorpus.Interpolated),
+            ("structured-property", LogLeakLocation.StructuredProperty, (Action<ILogger, string>)PlainLoggingCorpus.StructuredState),
+            ("scope", LogLeakLocation.Scope, (Action<ILogger, string>)PlainLoggingCorpus.NestedScopes),
+            ("exception-representation", LogLeakLocation.ExceptionRepresentation, (Action<ILogger, string>)PlainLoggingCorpus.Exception)
         };
 
         foreach (var (name, expectedLocation, emit) in locations)
         {
             var label = "diagnostic-" + name;
             var sentinel = NewSentinel(label);
-            using var probe = NewProbe(32);
-            probe.AddSentinel(label, sentinel);
+            var telemetryDouble = new RecordingTelemetry();
+            using var probe = NewProbe(32, telemetry: telemetryDouble);
+            probe.AddSecret(label, sentinel);
             using var factory = CreateFactory(probe);
             emit(factory.CreateLogger("LogLeak.Probe.Diagnostics"), sentinel);
-            var findings = probe.FindLeaks();
-            Require(findings.Any(finding => finding.Label == label && finding.Location == expectedLocation), "The diagnostic corpus did not create the expected supported-field finding.");
+            var findings = probe.Verify().Findings;
+            Require(findings.Any(finding => finding.SentinelLabel == label && finding.Location == expectedLocation), "The diagnostic corpus did not create the expected supported-field finding.");
 
             var thrown = CaptureAssertion(probe);
             var console = CaptureConsole(() =>
@@ -553,11 +555,9 @@ internal static class Program
                 Console.WriteLine(thrown.ToString());
                 Console.Error.WriteLine(thrown.ToString());
             });
-            var testJson = JsonSerializer.Serialize(new SafeTestResult("failed", findings.Select(finding => new SafeFinding(finding.Label, finding.Location.ToString())).ToArray()));
-            var testXml = new XDocument(new XElement("test-result", new XAttribute("status", "failed"), findings.Select(finding => new XElement("finding", new XAttribute("label", finding.Label), new XAttribute("location", finding.Location))))).ToString(SaveOptions.DisableFormatting);
+            var testJson = JsonSerializer.Serialize(new SafeTestResult("failed", findings.Select(finding => new SafeFinding(finding.SentinelLabel, finding.Location.ToString())).ToArray()));
+            var testXml = new XDocument(new XElement("test-result", new XAttribute("status", "failed"), findings.Select(finding => new XElement("finding", new XAttribute("label", finding.SentinelLabel), new XAttribute("location", finding.Location))))).ToString(SaveOptions.DisableFormatting);
             var report = JsonSerializer.Serialize(new SafeReport("diagnostic", findings.Count, "no captured log content"));
-            var telemetryDouble = new FakeTelemetry();
-            telemetryDouble.Send(new SafeTelemetry("verification-complete", "test", findings.Count));
             var telemetry = telemetryDouble.Input;
             var debuggerText = string.Join(Environment.NewLine, findings.Select(finding => finding.ToString()).Append(thrown.ToString()));
 
@@ -600,7 +600,7 @@ internal static class Program
         const int limit = 128;
         var sentinel = NewSentinel("overflow");
         using var probe = NewProbe(limit);
-        probe.AddSentinel("overflow", sentinel);
+        probe.AddSecret("overflow", sentinel);
         using var factory = CreateFactory(probe);
         var logger = factory.CreateLogger("LogLeak.Probe.Overflow");
         for (var index = 0; index <= limit; index++)
@@ -608,22 +608,22 @@ internal static class Program
             logger.LogInformation("overflow event {Index}", index);
         }
 
-        Require(probe.Overflowed, "The configured capture limit did not enter the overflow state.");
+        var overflowResult = probe.Verify();
+        Require(overflowResult.Status == LogLeakVerificationStatus.Inconclusive && overflowResult.CapturedEventCount == limit, "The configured capture limit did not enter the overflow state.");
         var first = CaptureProbeFailure(probe);
         logger.LogInformation("post-overflow event");
         var second = CaptureProbeFailure(probe);
-        Require(first is ProbeOverflowException && second is ProbeOverflowException, "Overflow did not remain an explicit conservative failure after more logging.");
-        var beforeDispose = probe.CapturedEventCount;
-        var registeredBeforeDispose = probe.RegisteredSentinelCount;
+        Require(first is LogLeakInconclusiveException && second is LogLeakInconclusiveException, "Overflow did not remain an explicit conservative failure after more logging.");
+        var beforeDispose = overflowResult.CapturedEventCount;
         probe.Dispose();
-        Require(beforeDispose == limit && registeredBeforeDispose == 1 && probe.CapturedEventCount == 0 && probe.RegisteredSentinelCount == 0, "Dispose did not clear bounded capture state.");
+        AssertDisposed(probe);
         var findingLimitSentinel = NewSentinel("finding-limit");
         using var findingLimitProbe = NewProbe(8, maximumFindings: 1);
-        findingLimitProbe.AddSentinel("finding-limit", findingLimitSentinel);
+        findingLimitProbe.AddSecret("finding-limit", findingLimitSentinel);
         using var findingLimitFactory = CreateFactory(findingLimitProbe);
         PlainLoggingCorpus.MessageTemplate(findingLimitFactory.CreateLogger("LogLeak.Probe.FindingLimit"), findingLimitSentinel);
         var findingLimitFailure = CaptureProbeFailure(findingLimitProbe);
-        Require(findingLimitFailure is ProbeOverflowException && findingLimitProbe.AggregateBudgetExceeded && findingLimitFailure.ToString().Contains("finding", StringComparison.Ordinal), "The finding-resource limit did not fail conservatively with a named budget.");
+        Require(findingLimitFailure is LogLeakInconclusiveException && findingLimitFailure.ToString().Contains("finding", StringComparison.Ordinal), "The finding-resource limit did not fail conservatively with a named budget.");
         Console.WriteLine($"PASS overflow: event-limit={limit}, finding-limit=1, retained-before-dispose={beforeDispose}, post-overflow verification remains inconclusive, disposed-state=cleared.");
         Console.WriteLine();
     }
@@ -687,7 +687,7 @@ internal static class Program
         var referenceMilliseconds = MeasureReferenceWorkload();
         var sentinel = NewSentinel("benchmark-absent");
         using var probe = NewProbe(eventCount);
-        probe.AddSentinel("benchmark-absent", sentinel);
+        probe.AddSecret("benchmark-absent", sentinel);
         using var factory = CreateFactory(probe);
         var logger = factory.CreateLogger("LogLeak.Probe.Benchmark");
         var baseline = GC.GetTotalMemory(forceFullCollection: true);
@@ -703,11 +703,14 @@ internal static class Program
         }
 
         emitTimer.Stop();
-        var findings = probe.FindLeaks();
-        var matchingElapsed = probe.MatchingElapsed;
+        var matchingTimer = Stopwatch.StartNew();
+        var verification = probe.Verify();
+        matchingTimer.Stop();
+        var findings = verification.Findings;
+        var matchingElapsed = matchingTimer.Elapsed;
         var retained = Math.Max(0, peak - baseline);
         Require(findings.Count == 0, "The absent-sentinel benchmark produced a finding.");
-        Require(probe.CapturedEventCount == eventCount, "The benchmark did not retain exactly the configured event limit.");
+        Require(verification.Status == LogLeakVerificationStatus.Clean && verification.CapturedEventCount == eventCount, "The benchmark did not retain exactly the configured event limit.");
         return new BenchmarkMeasurement(referenceMilliseconds, emitTimer.Elapsed.TotalMilliseconds, matchingElapsed.TotalMilliseconds, retained);
     }
 
@@ -771,11 +774,14 @@ internal static class Program
         Console.WriteLine($"Resource limits: PASS - event capture, {MaximumInspectionUnitsPerEvent} inspection units/event, {MaximumFindingsPerEvent} findings/event, a {MaximumTransientAllocationBytes:N0}-byte transient-allocation guard/event, and {MaximumPayloadCharacters}-character text units are guarded; overflow is explicit inconclusive.");
         Console.WriteLine("Supported/excluded field contract: PASS - {OriginalFormat} is excluded metadata and recorded excluded-field fixtures match the classifier output.");
         Console.WriteLine($"Benchmark overhead acceptable: PASS - normalized CPU thresholds derive mechanically from the committed {statistics.SampleCount}-sample reference-relative baseline with {statistics.HeadroomFraction:P0} headroom; raw and normalized measurements are printed above. Sampled heap delta is informational across OS/runtime implementations.");
-        Console.WriteLine("Diagnostic coverage: PASS within probe-owned and simulated output paths; consumer tests cover assertion and telemetry behavior separately.");
-        Console.WriteLine("The retained corpus is a technical feasibility check; consumer contract tests validate package behavior.");
+        Console.WriteLine("Diagnostic coverage: PASS within shipping probe-owned and simulated output paths; the isolated package consumer validates the built package boundary.");
+        Console.WriteLine("The Phase 0 corpus is bound to the shipping implementation; no separate probe contract remains.");
     }
 
-    private static BoundaryProbe NewProbe(int maximumEvents, int maximumSentinels = 128, int maximumFindings = MaximumFindingsTotal, int maximumPayloadCharacters = MaximumPayloadCharacters, int maximumInspectionUnitsPerEvent = MaximumInspectionUnitsPerEvent, int maximumFindingsPerEvent = MaximumFindingsPerEvent, long maximumTransientAllocationBytes = MaximumTransientAllocationBytes) => new(new CaptureOptions(maximumEvents, maximumSentinels, maximumFindings, maximumPayloadCharacters: maximumPayloadCharacters, maximumInspectionUnitsPerEvent: maximumInspectionUnitsPerEvent, maximumFindingsPerEvent: maximumFindingsPerEvent, maximumTransientAllocationBytes: maximumTransientAllocationBytes));
+    private static LogLeakProbe NewProbe(int maximumEvents, int maximumSentinels = 128, int maximumFindings = MaximumFindingsTotal, int maximumPayloadCharacters = MaximumPayloadCharacters, int maximumInspectionUnitsPerEvent = MaximumInspectionUnitsPerEvent, int maximumFindingsPerEvent = MaximumFindingsPerEvent, long maximumTransientAllocationBytes = MaximumTransientAllocationBytes, LogLeakProbe.ILogLeakTelemetry? telemetry = null)
+        => telemetry is null
+            ? new LogLeakProbe(new LogLeakOptions(maximumCapturedEvents: maximumEvents, maximumSentinels: maximumSentinels, maximumFindings: maximumFindings, maximumPayloadCharacters: maximumPayloadCharacters, maximumInspectionUnitsPerEvent: maximumInspectionUnitsPerEvent, maximumFindingsPerEvent: maximumFindingsPerEvent, maximumTransientAllocationBytes: maximumTransientAllocationBytes))
+            : new LogLeakProbe(new LogLeakOptions(maximumCapturedEvents: maximumEvents, maximumSentinels: maximumSentinels, maximumFindings: maximumFindings, maximumPayloadCharacters: maximumPayloadCharacters, maximumInspectionUnitsPerEvent: maximumInspectionUnitsPerEvent, maximumFindingsPerEvent: maximumFindingsPerEvent, maximumTransientAllocationBytes: maximumTransientAllocationBytes), telemetry);
 
     private sealed record BenchmarkMeasurement(double ReferenceMilliseconds, double EmitMilliseconds, double MatchingMilliseconds, long RetainedBytes);
 
@@ -795,20 +801,20 @@ internal static class Program
         return args[optionIndex + 1];
     }
 
-    private static ILoggerFactory CreateFactory(BoundaryProbe probe) => LoggerFactory.Create(builder =>
+    private static ILoggerFactory CreateFactory(LogLeakProbe probe) => LoggerFactory.Create(builder =>
     {
         builder.ClearProviders();
         builder.SetMinimumLevel(LogLevel.Trace);
-        builder.AddProvider(probe);
+        builder.AddProvider(probe.Provider);
     });
 
-    private static LeakAssertionException CaptureAssertion(BoundaryProbe probe)
+    private static LogLeakAssertionException CaptureAssertion(LogLeakProbe probe)
     {
         try
         {
             probe.AssertNoLeaks();
         }
-        catch (LeakAssertionException exception)
+        catch (LogLeakAssertionException exception)
         {
             return exception;
         }
@@ -816,7 +822,7 @@ internal static class Program
         throw new InvalidOperationException("Expected a safe leak assertion.");
     }
 
-    private static Exception CaptureProbeFailure(BoundaryProbe probe)
+    private static Exception CaptureProbeFailure(LogLeakProbe probe)
     {
         try
         {
@@ -842,6 +848,15 @@ internal static class Program
         }
 
         throw new InvalidOperationException("Expected a safe configuration failure.");
+    }
+
+    private static bool HasFinding(LogLeakProbe probe, string label, LogLeakLocation location)
+        => probe.Verify().Findings.Any(finding => finding.SentinelLabel == label && finding.Location == location);
+
+    private static void AssertDisposed(LogLeakProbe probe)
+    {
+        var exception = CaptureConfigurationFailure(() => probe.Verify());
+        Require(exception is LogLeakDisposedException, "Dispose did not make later verification fail deterministically.");
     }
 
     private sealed class CountingState : IEnumerable<KeyValuePair<string, object?>>
@@ -936,7 +951,7 @@ internal static class Program
         }
     }
 
-    private sealed class CountableScopeProvider : CountingScopeProvider, ICountableScopeProvider
+    private sealed class CountableScopeProvider : CountingScopeProvider
     {
         public CountableScopeProvider(int count, string sentinel, int? sentinelIndex)
             : base(count, sentinel, sentinelIndex)
@@ -967,11 +982,11 @@ internal static class Program
         }
     }
 
-    private static void RequireSafeFindingDiagnostics(IEnumerable<LeakFinding> findings)
+    private static void RequireSafeFindingDiagnostics(IEnumerable<LogLeakFinding> findings)
     {
         foreach (var finding in findings)
         {
-            Require(!string.IsNullOrWhiteSpace(finding.Label) && !finding.ToString().Contains("System.", StringComparison.Ordinal), "Finding diagnostics contained unexpected raw representation data.");
+            Require(!string.IsNullOrWhiteSpace(finding.SentinelLabel) && !finding.ToString().Contains("System.", StringComparison.Ordinal), "Finding diagnostics contained unexpected raw representation data.");
         }
     }
 
@@ -991,13 +1006,15 @@ internal static class Program
 
     private sealed record SafeReport(string Kind, int FindingCount, string ContentPolicy);
 
-    private sealed record SafeTelemetry(string Event, string Environment, int FindingCount);
-
-    private sealed class FakeTelemetry
+    private sealed class RecordingTelemetry : LogLeakProbe.ILogLeakTelemetry
     {
-        public string? Input { get; private set; }
+        private readonly List<string> calls = new();
 
-        public void Send(SafeTelemetry payload) => Input = JsonSerializer.Serialize(payload);
+        public string Input => string.Join(";", calls);
+
+        public void TrackActivation() => calls.Add("activation");
+
+        public void TrackHeartbeat() => calls.Add("heartbeat");
     }
 
     private static class DiagnosticSafetyAudit

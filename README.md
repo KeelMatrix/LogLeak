@@ -84,10 +84,10 @@ MIT
 
 ## Development
 
-The feasibility corpus remains under `src/LogLeak.Probe.Core` and `tests/LogLeak.Probe.*`:
+The Phase 0 corpus runs against the shipping `KeelMatrix.LogLeak` implementation through `tests/LogLeak.Probe.Runner`:
 
 ```text
 dotnet run --project tests/LogLeak.Probe.Runner/LogLeak.Probe.Runner.csproj -c Release --no-restore
 ```
 
-The shipping package is under `src/KeelMatrix.LogLeak`. Focused contract tests are under `tests/KeelMatrix.LogLeak.Tests`.
+The shipping package is under `src/KeelMatrix.LogLeak`. Focused contract tests are under `tests/KeelMatrix.LogLeak.Tests`; the corpus and package gate are the release-equivalent integration checks.
