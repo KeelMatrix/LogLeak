@@ -36,6 +36,8 @@ Use synthetic values created only for tests. A planted value produces a safe `Lo
 
 Registration labels are safe identifiers limited to 64 characters using letters, digits, `-`, `_`, `.`, and `:`. No registered label may textually contain a registered value, and no registered value may textually contain a registered label. The rule uses exact ordinal comparison (case-sensitive, with no normalization) and is checked at every registration in either order.
 
+Registration freezes when the first event is captured or verification starts. A later `AddSecret` call throws `LogLeakConfigurationException`; this prevents retained findings from being reinterpreted under a changed sentinel set.
+
 ## Documentation
 
 - [Supported fields](docs/supported-fields.md)
@@ -51,16 +53,18 @@ The supported boundary is intentionally frozen to:
 
 - formatted message output, including message templates and source-generated `LoggerMessage` calls;
 - direct string values in structured state, excluding reserved `{OriginalFormat}` metadata;
-- direct string values in nested logging scopes;
+- plain string nested scopes;
+- direct string values in templated scopes such as `logger.BeginScope("Authorization {Token}", value)`;
+- direct string values in dictionary or `IReadOnlyDictionary<string, object?>` scopes;
 - the string representation of a logging exception.
 
-Matching is exact ordinal literal matching. LogLeak does not decode, normalize, hash, encode, recursively serialize objects, or infer unregistered secrets. It does not inspect arbitrary sinks.
+Matching is exact ordinal literal matching. Non-string scope values and opaque scope objects are excluded; LogLeak does not recursively serialize objects, decode, normalize, hash, encode, or infer unregistered secrets. It does not inspect arbitrary sinks.
 
 ## Bounds and privacy
 
 Capture defaults are bounded to 4,096 UTF-16 characters per text unit, 1,024 inspection units per event, 256 findings per event, 4,096 findings overall, and 4,096 captured events. The transient per-event allocation guard is 1 MiB. A bound breach returns `Inconclusive` and never `Clean`.
 
-Conclusive verification requests best-effort activation and weekly heartbeat signals through `KeelMatrix.Telemetry`. LogLeak sends no sentinel, log content, exception text, category, event name, or property value. Core verification requires no network. Set `KEELMATRIX_NO_TELEMETRY=1` to opt out.
+Only a clean verification requests best-effort activation and weekly heartbeat signals through `KeelMatrix.Telemetry`. Detected leaks and inconclusive captures do not request activation or heartbeat telemetry. LogLeak sends no sentinel, log content, exception text, category, event name, or property value. Core verification requires no network. Set `KEELMATRIX_NO_TELEMETRY=1` to opt out.
 
 ## Limitations
 
@@ -68,7 +72,7 @@ LogLeak verifies only the captured `Microsoft.Extensions.Logging` provider bound
 
 ## Scope boundary
 
-Register `probe.Provider` before opening any scopes that the probe should observe. Scopes opened before provider registration are outside the declared observed boundary and may result in a clean verification even when they contain a registered sentinel.
+Register `probe.Provider` before opening any scopes that the probe should observe. Scopes opened before provider registration are outside the declared observed boundary and may result in a clean verification even when they contain a registered sentinel. Within the observed boundary, only the supported shallow scope forms above are inspected.
 
 ## Troubleshooting
 

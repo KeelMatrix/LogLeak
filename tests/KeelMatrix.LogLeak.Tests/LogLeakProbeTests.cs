@@ -68,6 +68,46 @@ public sealed partial class LogLeakProbeTests
     }
 
     [Fact]
+    public void Detects_templated_and_dictionary_scope_string_values_without_serializing_objects()
+    {
+        const string sentinel = "synthetic-templated-scope-3e7a";
+        using var probe = new LogLeakProbe().AddSecret("marker", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("PaymentClient");
+
+        using (logger.BeginScope("Authorization {Token}", sentinel))
+        using (logger.BeginScope(new Dictionary<string, object?>
+        {
+            ["Authorization"] = sentinel,
+            ["Opaque"] = new OpaqueScope(sentinel)
+        }))
+        {
+            logger.LogInformation("scope event");
+        }
+
+        var result = probe.Verify();
+
+        Assert.Equal(LogLeakVerificationStatus.LeaksDetected, result.Status);
+        Assert.Equal(2, result.Findings.Count(finding => finding.Location == LogLeakLocation.Scope));
+    }
+
+    [Fact]
+    public void Excludes_opaque_scope_objects_instead_of_recursively_serializing_them()
+    {
+        const string sentinel = "synthetic-opaque-scope-8d2f";
+        using var probe = new LogLeakProbe().AddSecret("marker", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("PaymentClient");
+
+        using (logger.BeginScope(new OpaqueScope(sentinel)))
+        {
+            logger.LogInformation("safe scope event");
+        }
+
+        Assert.Equal(LogLeakVerificationStatus.Clean, probe.Verify().Status);
+    }
+
+    [Fact]
     public void Scope_opened_before_provider_registration_is_outside_observed_boundary()
     {
         const string sentinel = "synthetic-pre-registration-scope-1a2b";
@@ -178,8 +218,69 @@ public sealed partial class LogLeakProbeTests
 
         Assert.DoesNotContain(sentinel, diagnosticText, StringComparison.Ordinal);
         Assert.Null(assertion.Findings[0].CategoryName);
+        Assert.Equal(0, telemetry.ActivationCalls);
+        Assert.Equal(0, telemetry.HeartbeatCalls);
+    }
+
+    [Fact]
+    public void Numeric_event_metadata_is_suppressed_from_findings_and_assertion_output()
+    {
+        const string sentinel = "718293";
+        using var probe = new LogLeakProbe().AddSecret("pin", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("Category-" + sentinel);
+        var state = new[]
+        {
+            new KeyValuePair<string, object?>(sentinel, sentinel),
+            new KeyValuePair<string, object?>("{OriginalFormat}", "pin event")
+        };
+
+        logger.Log(LogLevel.Warning, new EventId(718293, "event-" + sentinel), state, null, static (_, _) => sentinel);
+
+        var result = probe.Verify();
+        Assert.NotEmpty(result.Findings);
+        Assert.All(result.Findings, finding =>
+        {
+            Assert.Null(finding.EventId);
+            Assert.DoesNotContain(sentinel, finding.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain(sentinel, finding.CategoryName ?? string.Empty, StringComparison.Ordinal);
+            Assert.DoesNotContain(sentinel, finding.EventName ?? string.Empty, StringComparison.Ordinal);
+            Assert.DoesNotContain(sentinel, finding.PropertyName ?? string.Empty, StringComparison.Ordinal);
+        });
+
+        var assertion = Assert.Throws<LogLeakAssertionException>(() => probe.AssertNoLeaks());
+        Assert.DoesNotContain(sentinel, assertion.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Clean_verification_requests_activation_and_heartbeat()
+    {
+        var telemetry = new RecordingTelemetry();
+        using var probe = new LogLeakProbe(null, telemetry).AddSecret("run", "synthetic-clean-activation-4d5e");
+        using var loggerFactory = CreateLoggerFactory(probe);
+        loggerFactory.CreateLogger("TelemetryTests").LogInformation("safe event");
+
+        Assert.Equal(LogLeakVerificationStatus.Clean, probe.Verify().Status);
         Assert.Equal(1, telemetry.ActivationCalls);
         Assert.Equal(1, telemetry.HeartbeatCalls);
+    }
+
+    [Fact]
+    public void Inconclusive_capture_does_not_request_telemetry()
+    {
+        var telemetry = new RecordingTelemetry();
+        var options = new LogLeakOptions(maximumCapturedEvents: 1);
+        using var probe = new LogLeakProbe(options, telemetry).AddSecret("capture", "synthetic-inconclusive-6f7a");
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("TelemetryTests");
+        logger.LogInformation("first event");
+        logger.LogInformation("second event");
+
+        Assert.Equal(LogLeakVerificationStatus.Inconclusive, probe.Verify().Status);
+        Assert.Equal(0, telemetry.ActivationCalls);
+        Assert.Equal(0, telemetry.HeartbeatCalls);
+        Assert.Throws<LogLeakInconclusiveException>(() => probe.AssertNoLeaks());
+        Assert.Equal(0, telemetry.ActivationCalls);
     }
 
     [Fact]
@@ -227,6 +328,43 @@ public sealed partial class LogLeakProbeTests
         Assert.Throws<LogLeakDisposedException>(() => probe.Verify());
         Assert.Throws<LogLeakDisposedException>(() => probe.AddSecret("later", "synthetic-later-77a2"));
         Assert.Throws<LogLeakDisposedException>(() => probe.Provider.CreateLogger("DisposedTests"));
+    }
+
+    [Fact]
+    public void Registration_freezes_when_capture_or_verification_begins()
+    {
+        using var capturedProbe = new LogLeakProbe();
+        using var capturedFactory = CreateLoggerFactory(capturedProbe);
+        capturedFactory.CreateLogger("LifecycleTests").LogInformation("future-sentinel-value-1a2b");
+
+        var captureException = Assert.Throws<LogLeakConfigurationException>(() =>
+            capturedProbe.AddSecret("future", "future-sentinel-value-1a2b"));
+        Assert.Contains("closed", captureException.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(LogLeakVerificationStatus.Clean, capturedProbe.Verify().Status);
+
+        using var verifiedProbe = new LogLeakProbe();
+        Assert.Equal(LogLeakVerificationStatus.Clean, verifiedProbe.Verify().Status);
+        var verificationException = Assert.Throws<LogLeakConfigurationException>(() =>
+            verifiedProbe.AddSecret("later", "synthetic-later-registration-2b3c"));
+        Assert.Contains("closed", verificationException.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Retained_findings_remain_stable_when_a_later_registration_is_rejected()
+    {
+        const string firstSentinel = "synthetic-first-retained-4c5d";
+        const string laterSentinel = "synthetic-later-retained-6e7f";
+        using var probe = new LogLeakProbe().AddSecret("primary", firstSentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        loggerFactory.CreateLogger("Category-" + laterSentinel).LogInformation(firstSentinel);
+
+        var firstResult = probe.Verify();
+        var finding = Assert.Single(firstResult.Findings);
+        Assert.Equal("Category-" + laterSentinel, finding.CategoryName);
+        Assert.Throws<LogLeakConfigurationException>(() => probe.AddSecret("secondary", laterSentinel));
+
+        var secondResult = probe.Verify();
+        Assert.Equal(finding.CategoryName, secondResult.Findings[0].CategoryName);
     }
 
     [Fact]
@@ -335,6 +473,70 @@ public sealed partial class LogLeakProbeTests
     }
 
     [Fact]
+    public void Detected_leaks_do_not_request_activation_telemetry()
+    {
+        const string sentinel = "synthetic-detected-telemetry-3a4b";
+        var telemetry = new RecordingTelemetry();
+        using var probe = new LogLeakProbe(null, telemetry).AddSecret("run", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        loggerFactory.CreateLogger("TelemetryTests").LogInformation(sentinel);
+
+        var result = probe.Verify();
+
+        Assert.Equal(LogLeakVerificationStatus.LeaksDetected, result.Status);
+        Assert.Equal(0, telemetry.ActivationCalls);
+        Assert.Equal(0, telemetry.HeartbeatCalls);
+        Assert.Throws<LogLeakAssertionException>(() => probe.AssertNoLeaks());
+        Assert.Equal(0, telemetry.ActivationCalls);
+    }
+
+    [Fact]
+    public async Task Concurrent_registration_and_capture_freeze_at_one_atomic_boundary()
+    {
+        const string sentinel = "synthetic-interleaved-registration-5b6c";
+        using var probe = new LogLeakProbe();
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("ConcurrencyLifecycleTests");
+        using var start = new Barrier(2);
+        Exception? registrationException = null;
+        Exception? captureException = null;
+
+        var registration = Task.Run(() =>
+        {
+            try
+            {
+                start.SignalAndWait();
+                probe.AddSecret("interleaved", sentinel);
+            }
+            catch (Exception exception)
+            {
+                registrationException = exception;
+            }
+        });
+        var capture = Task.Run(() =>
+        {
+            try
+            {
+                start.SignalAndWait();
+                logger.LogInformation(sentinel);
+            }
+            catch (Exception exception)
+            {
+                captureException = exception;
+            }
+        });
+
+        await Task.WhenAll(registration, capture);
+
+        Assert.True(registrationException is null || registrationException is LogLeakConfigurationException);
+        Assert.Null(captureException);
+        Assert.Throws<LogLeakConfigurationException>(() => probe.AddSecret("after", "synthetic-after-interleave-7d8e"));
+        Assert.Contains(
+            probe.Verify().Status,
+            new[] { LogLeakVerificationStatus.Clean, LogLeakVerificationStatus.LeaksDetected });
+    }
+
+    [Fact]
     public async Task Concurrent_capture_detects_planted_sentinel_without_exceptions_or_unbounded_findings()
     {
         const int taskCount = 12;
@@ -418,5 +620,17 @@ public sealed partial class LogLeakProbeTests
             HeartbeatCalls++;
             throw new InvalidOperationException("telemetry unavailable");
         }
+    }
+
+    private sealed class OpaqueScope
+    {
+        private readonly string value;
+
+        public OpaqueScope(string value)
+        {
+            this.value = value;
+        }
+
+        public override string ToString() => value;
     }
 }

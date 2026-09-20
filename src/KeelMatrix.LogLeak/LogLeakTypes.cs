@@ -115,7 +115,7 @@ public sealed class LogLeakFinding
         string sentinelLabel,
         LogLeakLocation location,
         string? categoryName,
-        int eventId,
+        int? eventId,
         string? eventName,
         string? propertyName)
     {
@@ -136,8 +136,8 @@ public sealed class LogLeakFinding
     /// <summary>Gets the logging category when it is safe to report.</summary>
     public string? CategoryName { get; }
 
-    /// <summary>Gets the numeric event identifier.</summary>
-    public int EventId { get; }
+    /// <summary>Gets the numeric event identifier when its invariant rendered text is safe to report.</summary>
+    public int? EventId { get; }
 
     /// <summary>Gets the event name when it is safe to report.</summary>
     public string? EventName { get; }
@@ -154,9 +154,9 @@ public sealed class LogLeakFinding
             result += " in category '" + CategoryName + "'";
         }
 
-        if (EventId != 0)
+        if (EventId is int eventId)
         {
-            result += " (EventId: " + EventId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            result += " (EventId: " + eventId.ToString(System.Globalization.CultureInfo.InvariantCulture);
             if (EventName is not null)
             {
                 result += ", Name: '" + EventName + "'";

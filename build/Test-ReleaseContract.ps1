@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $validatorPath = Join-Path $PSScriptRoot 'Validate-ReleaseContract.ps1'
+$resolverPath = Join-Path $PSScriptRoot 'Resolve-ReleaseVersion.ps1'
 $scratchRoot = [IO.Path]::GetTempPath()
 $fixtureRoot = Join-Path $scratchRoot "logleak-release-contract-$([guid]::NewGuid().ToString('N'))"
 $releaseDate = '2026-09-16'
@@ -109,6 +110,60 @@ function Invoke-Scenario {
     }
 }
 
+function Test-ReleaseResolver {
+    $outputPath = Join-Path $fixtureRoot 'resolver-output.txt'
+    $head = (& git -C $repositoryRoot rev-parse HEAD).Trim()
+    $commitDate = (& git -C $repositoryRoot show -s --format=%cs $head).Trim()
+    $arguments = @(
+        '-NoProfile',
+        '-File', $resolverPath,
+        '-RepositoryRoot', $repositoryRoot,
+        '-Tag', 'v0.1.0',
+        '-RefType', 'tag',
+        '-ExpectedCommit', $head,
+        '-OutputPath', $outputPath,
+        '-TagCommitOverride', $head,
+        '-CommitDateOverride', $commitDate
+    )
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    $output = @(& pwsh @arguments 2>&1 | Out-String)
+    $exitCode = $LASTEXITCODE
+    $stopwatch.Stop()
+
+    Write-Host '[release-resolver]'
+    if ($output.Count -gt 0 -and $output.Trim() -ne '') {
+        Write-Host $output.Trim()
+    }
+    Write-Host "Exit code: $exitCode; duration $($stopwatch.Elapsed.ToString('hh\:mm\:ss\.fff'))"
+    if ($exitCode -ne 0) {
+        throw "Release resolver should pass but exited $exitCode."
+    }
+
+    $values = @{}
+    foreach ($line in @(Get-Content -LiteralPath $outputPath)) {
+        $parts = $line -split '=', 2
+        if ($parts.Count -eq 2) {
+            $values[$parts[0]] = $parts[1]
+        }
+    }
+
+    $version = [string] $values['version']
+    if ($version -ne '0.1.0') {
+        throw "Release resolver output version '$version'; expected '0.1.0'."
+    }
+    $expectedArtifacts = @(
+        "KeelMatrix.LogLeak.$version.nupkg"
+        "KeelMatrix.LogLeak.$version.snupkg"
+    ) | Sort-Object
+    $actualArtifactNames = @(
+        "KeelMatrix.LogLeak.$($values['version']).nupkg"
+        "KeelMatrix.LogLeak.$($values['version']).snupkg"
+    ) | Sort-Object
+    if (Compare-Object -ReferenceObject $expectedArtifacts -DifferenceObject $actualArtifactNames) {
+        throw "Release artifact naming did not follow resolver output."
+    }
+}
+
 $plannedChangelog = @'
 # Changelog
 
@@ -176,6 +231,7 @@ $capabilityWording = @(
 
 try {
     New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
+    Test-ReleaseResolver
     Invoke-Scenario -Name 'planned-unreleased-rejected' -Changelog $plannedChangelog -ShouldPass $false -ExpectedDiagnostic 'no finalized'
     Invoke-Scenario -Name 'finalized-consistent-passes' -Changelog $finalizedChangelog -ShouldPass $true
     Invoke-Scenario -Name 'changelog-package-mismatch-rejected' -Changelog $finalizedChangelog -ShouldPass $false -SourceVersion '0.1.1' -InstallVersion '0.1.1' -ExpectedDiagnostic "source property 'Version'"

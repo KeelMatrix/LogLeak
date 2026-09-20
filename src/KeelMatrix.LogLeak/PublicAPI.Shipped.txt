@@ -5,7 +5,6 @@ KeelMatrix.LogLeak.LogLeakConfigurationException
 KeelMatrix.LogLeak.LogLeakDisposedException
 KeelMatrix.LogLeak.LogLeakFinding
 KeelMatrix.LogLeak.LogLeakFinding.CategoryName.get -> string?
-KeelMatrix.LogLeak.LogLeakFinding.EventId.get -> int
 KeelMatrix.LogLeak.LogLeakFinding.EventName.get -> string?
 KeelMatrix.LogLeak.LogLeakFinding.Location.get -> KeelMatrix.LogLeak.LogLeakLocation
 KeelMatrix.LogLeak.LogLeakFinding.PropertyName.get -> string?
