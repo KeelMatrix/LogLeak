@@ -164,6 +164,37 @@ function Test-ReleaseResolver {
     }
 }
 
+function Test-WorkflowTrigger {
+    $workflowPath = Join-Path $repositoryRoot '.github/workflows/release.yml'
+    $workflowText = Get-Content -LiteralPath $workflowPath -Raw
+    $tagPatternMatch = [regex]::Match(
+        $workflowText,
+        '(?m)^\s*tags:\s*\r?\n\s*-\s*[''\"](?<pattern>[^''\"]+)[''\"]\s*$'
+    )
+    if (-not $tagPatternMatch.Success) {
+        throw "Could not read the release tag pattern from '$workflowPath'."
+    }
+
+    $tagPattern = $tagPatternMatch.Groups['pattern'].Value
+    $firstReleaseTag = 'v0.1.0'
+    $nonReleaseTag = 'release-0.1.0'
+    $firstReleaseMatches = $firstReleaseTag -like $tagPattern
+    $nonReleaseMatches = $nonReleaseTag -like $tagPattern
+
+    Write-Host '[workflow-trigger]'
+    Write-Host "Workflow: $workflowPath"
+    Write-Host "Pattern: '$tagPattern'"
+    Write-Host "First release '$firstReleaseTag' matches: $firstReleaseMatches"
+    Write-Host "Non-release '$nonReleaseTag' matches: $nonReleaseMatches"
+
+    if (-not $firstReleaseMatches) {
+        throw "Release workflow tag pattern '$tagPattern' does not match intended tag '$firstReleaseTag'."
+    }
+    if ($nonReleaseMatches) {
+        throw "Release workflow tag pattern '$tagPattern' unexpectedly matches non-release tag '$nonReleaseTag'."
+    }
+}
+
 $plannedChangelog = @'
 # Changelog
 
@@ -231,6 +262,7 @@ $capabilityWording = @(
 
 try {
     New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
+    Test-WorkflowTrigger
     Test-ReleaseResolver
     Invoke-Scenario -Name 'planned-unreleased-rejected' -Changelog $plannedChangelog -ShouldPass $false -ExpectedDiagnostic 'no finalized'
     Invoke-Scenario -Name 'finalized-consistent-passes' -Changelog $finalizedChangelog -ShouldPass $true
