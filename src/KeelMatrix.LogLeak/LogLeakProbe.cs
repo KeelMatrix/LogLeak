@@ -16,6 +16,7 @@ public sealed class LogLeakProbe : IDisposable
     private readonly CaptureLoggerProvider provider;
     private IExternalScopeProvider scopeProvider = new LoggerExternalScopeProvider();
     private int capturedEventCount;
+    private bool registrationFrozen;
     private bool disposed;
     private bool eventOverflowed;
     private bool aggregateBudgetExceeded;
@@ -65,7 +66,8 @@ public sealed class LogLeakProbe : IDisposable
     /// Labels are limited to 64 characters and may contain letters, digits, hyphens, underscores, periods, and colons.
     /// No registered label may textually contain a registered value, and no registered value may textually contain a
     /// registered label. These checks use exact ordinal comparison (case-sensitive, with no normalization) and run at
-    /// every registration in either registration order.
+    /// every registration in either registration order. Registration closes when capture or verification begins; later
+    /// additions are rejected so retained findings cannot be reinterpreted under a different sentinel set.
     /// </remarks>
     /// <exception cref="LogLeakConfigurationException">Thrown when the label or value is invalid.</exception>
     /// <exception cref="LogLeakDisposedException">Thrown when the probe has been disposed.</exception>
@@ -82,6 +84,11 @@ public sealed class LogLeakProbe : IDisposable
         lock (gate)
         {
             ThrowIfDisposed();
+            if (registrationFrozen)
+            {
+                throw new LogLeakConfigurationException("Sentinel registration is closed once capture or verification begins.");
+            }
+
             if (sentinels.Count >= options.MaximumSentinels)
             {
                 throw new LogLeakConfigurationException("The sentinel registration limit was reached.");
@@ -113,6 +120,10 @@ public sealed class LogLeakProbe : IDisposable
     /// Performs a bounded verification and returns a safe, explicit result.
     /// </summary>
     /// <returns>A clean, leak-detected, or inconclusive result with safe findings only.</returns>
+    /// <remarks>
+    /// The first capture or verification freezes sentinel registration. Only a clean verification requests best-effort
+    /// activation and heartbeat telemetry; detected leaks and inconclusive captures do not.
+    /// </remarks>
     /// <exception cref="LogLeakDisposedException">Thrown when the probe has been disposed.</exception>
     public LogLeakVerificationResult Verify()
     {
@@ -120,6 +131,7 @@ public sealed class LogLeakProbe : IDisposable
         lock (gate)
         {
             ThrowIfDisposed();
+            registrationFrozen = true;
             var status = GetStatus();
             result = new LogLeakVerificationResult(
                 status,
@@ -128,7 +140,7 @@ public sealed class LogLeakProbe : IDisposable
                 status == LogLeakVerificationStatus.Inconclusive ? GetInconclusiveReason() : null);
         }
 
-        if (result.Status != LogLeakVerificationStatus.Inconclusive)
+        if (result.Status == LogLeakVerificationStatus.Clean)
         {
             TrackTelemetryBestEffort();
         }
@@ -171,6 +183,7 @@ public sealed class LogLeakProbe : IDisposable
             findings.Clear();
             sentinels.Clear();
             capturedEventCount = 0;
+            registrationFrozen = false;
             eventOverflowed = false;
             aggregateBudgetExceeded = false;
             aggregateBudgetName = null;
@@ -259,6 +272,8 @@ public sealed class LogLeakProbe : IDisposable
                 return;
             }
 
+            registrationFrozen = true;
+
             if (capturedEventCount >= options.MaximumCapturedEvents)
             {
                 eventOverflowed = true;
@@ -315,32 +330,7 @@ public sealed class LogLeakProbe : IDisposable
 
         if (state is IEnumerable<KeyValuePair<string, object?>> entries)
         {
-            EnsureCountableExtentWithinBudget(entries, "structured-state entry");
-            using var enumerator = entries.GetEnumerator();
-            while (true)
-            {
-                if (inspectionUnitsThisEvent >= options.MaximumInspectionUnitsPerEvent)
-                {
-                    ExceedAggregateBudget("per-event inspection-unit", options.MaximumInspectionUnitsPerEvent, inspectionUnitsThisEvent + 1);
-                }
-
-                if (!enumerator.MoveNext())
-                {
-                    break;
-                }
-
-                var entry = enumerator.Current;
-                ConsumeInspectionUnit("structured-state entry");
-                if (string.Equals(entry.Key, "{OriginalFormat}", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                if (entry.Value is string text)
-                {
-                    InspectText(text, LogLeakLocation.StructuredProperty, categoryName, eventId, entry.Key, "structured property", countUnit: false);
-                }
-            }
+            InspectStringValuedEntries(entries, LogLeakLocation.StructuredProperty, categoryName, eventId, "structured-state entry", "structured property");
         }
 
         currentScopeProvider.ForEachScope(static (scope, callbackState) => callbackState.InspectScope(scope), this);
@@ -353,6 +343,53 @@ public sealed class LogLeakProbe : IDisposable
         if (scope is string text)
         {
             InspectText(text, LogLeakLocation.Scope, categoryNameThisEvent, eventIdThisEvent, propertyName: null, unit: "scope", countUnit: false);
+        }
+        else if (scope is IEnumerable<KeyValuePair<string, object?>> entries)
+        {
+            InspectStringValuedEntries(entries, LogLeakLocation.Scope, categoryNameThisEvent, eventIdThisEvent, "scope entry", "scope value");
+        }
+    }
+
+    private void InspectStringValuedEntries(
+        IEnumerable<KeyValuePair<string, object?>> entries,
+        LogLeakLocation location,
+        string? categoryName,
+        EventId eventId,
+        string extentUnit,
+        string textUnit)
+    {
+        EnsureCountableExtentWithinBudget(entries, extentUnit);
+        using var enumerator = entries.GetEnumerator();
+        while (true)
+        {
+            if (inspectionUnitsThisEvent >= options.MaximumInspectionUnitsPerEvent)
+            {
+                ExceedAggregateBudget("per-event inspection-unit", options.MaximumInspectionUnitsPerEvent, inspectionUnitsThisEvent + 1);
+            }
+
+            if (!enumerator.MoveNext())
+            {
+                break;
+            }
+
+            var entry = enumerator.Current;
+            ConsumeInspectionUnit(extentUnit);
+            if (string.Equals(entry.Key, "{OriginalFormat}", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (entry.Value is string text)
+            {
+                InspectText(
+                    text,
+                    location,
+                    categoryName,
+                    eventId,
+                    location == LogLeakLocation.StructuredProperty ? entry.Key : null,
+                    textUnit,
+                    countUnit: false);
+            }
         }
     }
 
@@ -394,7 +431,7 @@ public sealed class LogLeakProbe : IDisposable
                     sentinel.Label,
                     location,
                     GetSafeMetadata(categoryName),
-                    eventId.Id,
+                    GetSafeEventId(eventId.Id),
                     GetSafeMetadata(eventId.Name),
                     location == LogLeakLocation.StructuredProperty ? GetSafeMetadata(propertyName) : null));
                 findingsThisEvent++;
@@ -415,6 +452,14 @@ public sealed class LogLeakProbe : IDisposable
         return sentinels.Any(sentinel => ContainsOrdinal(metadata, sentinel.Value))
             ? null
             : metadata;
+    }
+
+    private int? GetSafeEventId(int eventId)
+    {
+        var rendered = eventId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return sentinels.Any(sentinel => ContainsOrdinal(rendered, sentinel.Value))
+            ? null
+            : eventId;
     }
 
     private void ConsumeInspectionUnit(string unit)

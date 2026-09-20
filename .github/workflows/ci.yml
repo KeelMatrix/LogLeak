@@ -36,6 +36,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Test release resolver and artifact naming
+        shell: pwsh
+        run: ./build/Test-ReleaseContract.ps1
+
       - name: Run release-equivalent verification
         shell: pwsh
         run: ./build/Invoke-ReleaseVerification.ps1
