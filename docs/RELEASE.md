@@ -38,7 +38,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow is triggered by tags matching `v[0-9]+.[0-9]+.[0-9]+`; it then independently rejects any tag that is not exactly `vX.Y.Z`. It checks out that tag, confirms the tag points at the checked-out commit, and derives the package version through `build/Resolve-ReleaseVersion.ps1` before writing the version output consumed by downstream artifact names. It then runs the same contract validator, restores from NuGet.org, builds and tests in Release, runs the package/archive/consumer gate, and checks that the artifact directory contains exactly one `.nupkg` and one `.snupkg` for the tag version.
+The workflow is triggered by tags matching `v[0-9]*`; `build/Resolve-ReleaseVersion.ps1` then independently rejects any tag that is not exactly `vX.Y.Z`. It checks out that tag, confirms the tag points at the checked-out commit, and derives the package version through `build/Resolve-ReleaseVersion.ps1` before writing the version output consumed by downstream artifact names. It then runs the same contract validator, restores from NuGet.org, builds and tests in Release, runs the package/archive/consumer gate, and checks that the artifact directory contains exactly one `.nupkg` and one `.snupkg` for the tag version.
 
 Only after those checks pass does the publish job obtain a short-lived NuGet credential through GitHub OIDC (`NuGet/login@v1`, NuGet.org user `dmitriyzen`) and push the two exact artifacts. The `.nupkg` push uses `--no-symbols`; the `.snupkg` is submitted exactly once in the following step, and both native command exit codes are checked explicitly. No long-lived NuGet API key is used. The workflow sets `KEELMATRIX_NO_TELEMETRY=1` so release validation is not production usage.
 

@@ -176,6 +176,9 @@ function Test-WorkflowTrigger {
     }
 
     $tagPattern = $tagPatternMatch.Groups['pattern'].Value
+    $releaseDocumentationPath = Join-Path $repositoryRoot 'docs/RELEASE.md'
+    $releaseDocumentation = Get-Content -LiteralPath $releaseDocumentationPath -Raw
+    $documentationContainsPattern = $releaseDocumentation.Contains($tagPattern)
     $firstReleaseTag = 'v0.1.0'
     $nonReleaseTag = 'release-0.1.0'
     $firstReleaseMatches = $firstReleaseTag -like $tagPattern
@@ -186,7 +189,11 @@ function Test-WorkflowTrigger {
     Write-Host "Pattern: '$tagPattern'"
     Write-Host "First release '$firstReleaseTag' matches: $firstReleaseMatches"
     Write-Host "Non-release '$nonReleaseTag' matches: $nonReleaseMatches"
+    Write-Host "Release documentation contains pattern: $documentationContainsPattern"
 
+    if (-not $documentationContainsPattern) {
+        throw "Release documentation '$releaseDocumentationPath' does not contain workflow tag pattern '$tagPattern'."
+    }
     if (-not $firstReleaseMatches) {
         throw "Release workflow tag pattern '$tagPattern' does not match intended tag '$firstReleaseTag'."
     }
