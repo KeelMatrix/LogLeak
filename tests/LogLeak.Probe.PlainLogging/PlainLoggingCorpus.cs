@@ -18,6 +18,26 @@ internal static class PlainLoggingCorpus
         logger.Log(LogLevel.Information, new EventId(201, "structured"), state, null, static (_, _) => "structured state event");
     }
 
+    public static void StringDictionaryState(ILogger logger, string sentinel)
+    {
+        var state = new Dictionary<string, string>
+        {
+            ["Authorization"] = sentinel
+        };
+
+        logger.Log(LogLevel.Information, new EventId(207, "string-dictionary-state"), state, null, static (_, _) => "string dictionary state event");
+    }
+
+    public static void NonStringDictionaryState(ILogger logger, string sentinel)
+    {
+        var state = new Dictionary<string, OpaqueClassifiedValue>
+        {
+            ["Authorization"] = new OpaqueClassifiedValue(sentinel)
+        };
+
+        logger.Log(LogLevel.Information, new EventId(208, "non-string-dictionary-state"), state, null, static (_, _) => "non-string dictionary state event");
+    }
+
     public static void NestedScopes(ILogger logger, string sentinel)
     {
         using var outer = logger.BeginScope("outer scope");

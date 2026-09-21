@@ -26,7 +26,7 @@ internal static class Program
         try
         {
             Console.WriteLine("LogLeak shipping implementation coverage corpus");
-            Console.WriteLine("Supported fields: formatted message; string structured-property values; string scope values; exception representation.");
+            Console.WriteLine("Supported fields: formatted message; string structured-state values in object- and string-valued enumerable shapes; string scope values; exception representation.");
             Console.WriteLine("Matching: exact ordinal literal containment only; no decoding, normalization, hashing, encoding permutations, or object serialization.");
             Console.WriteLine();
             PrintFieldContract();
@@ -90,6 +90,7 @@ internal static class Program
         RunExpectedFinding("source-generated LoggerMessage", LogLeakLocation.FormattedMessage, (logger, sentinel) => GeneratedLoggingCorpus.SourceGenerated(logger, sentinel));
         RunExpectedFinding("source-generated structured property", LogLeakLocation.StructuredProperty, (logger, sentinel) => GeneratedLoggingCorpus.SourceGenerated(logger, sentinel));
         RunExpectedFinding("direct structured state value", LogLeakLocation.StructuredProperty, PlainLoggingCorpus.StructuredState);
+        RunDictionaryStateCorpus();
         RunExpectedFinding("nested scope value", LogLeakLocation.Scope, PlainLoggingCorpus.NestedScopes);
         RunDictionaryScopeCorpus();
         RunExpectedFinding("exception representation", LogLeakLocation.ExceptionRepresentation, PlainLoggingCorpus.Exception);
@@ -111,15 +112,15 @@ internal static class Program
     {
         Console.WriteLine("SUPPORTED FIELD CONTRACT");
         Console.WriteLine("- formatted message: formatter output inspected with ordinal literal containment.");
-        Console.WriteLine("- structured property: direct string values in IEnumerable<KeyValuePair<string, object?>> state inspected except the reserved {OriginalFormat} template metadata key; values are never serialized.");
-        Console.WriteLine("- scope: plain strings, IEnumerable<KeyValuePair<string, object?>> entries, and IEnumerable<KeyValuePair<string, string>> entries are inspected; other structured or arbitrary scope objects are excluded.");
+        Console.WriteLine("- structured state: direct string values in IEnumerable<KeyValuePair<string, object?>> or IEnumerable<KeyValuePair<string, string>> state are inspected except the reserved {OriginalFormat} template metadata key; values are never serialized, and a state object matching both interfaces is inspected once.");
+        Console.WriteLine("- scope: plain strings, templated direct string values, IEnumerable<KeyValuePair<string, object?>> entries, and IEnumerable<KeyValuePair<string, string>> entries are inspected; other structured or arbitrary scope objects are excluded.");
         Console.WriteLine("- exception representation: exception.ToString() inspected with ordinal literal containment; exception payload is never emitted.");
         Console.WriteLine("- registration bound: at most 128 sentinel values by default, each at most 4096 UTF-16 characters.");
         Console.WriteLine($"- payload bound: every inspected text unit is limited to {MaximumPayloadCharacters} UTF-16 characters (approximately 8 KiB of UTF-16 character data); this covers ordinary test messages while rejecting pathological payloads, with no truncation; exceeding it is explicitly inconclusive.");
         Console.WriteLine($"- aggregate resource budget: at most {MaximumInspectionUnitsPerEvent} structured-entry/scope/text inspection units and {MaximumFindingsPerEvent} findings per event; any exceeded budget is explicit inconclusive.");
         Console.WriteLine($"- retained capture budget: at most the configured event count and {MaximumFindingsPerEvent} findings per event ({MaximumFindingsTotal:N0} total findings by default); captured text is not retained.");
         Console.WriteLine("EXCLUDED FIELD CONTRACT");
-        Console.WriteLine("- non-string state/scope objects: excluded because recursive serialization or ToString would be unsafe and unreliable.");
+        Console.WriteLine("- non-string state and scope shapes: excluded because recursive serialization or ToString would be unsafe and unreliable; a sentinel held only in Dictionary<string, int> or another opaque/non-string value can therefore produce a clean result.");
         Console.WriteLine("- category and level metadata: not inspected; level is an enum with no sentinel-bearing text payload.");
         Console.WriteLine("- EventId number/name, raw message template, and property names: not inspected; the reserved {OriginalFormat} key is excluded metadata, not a structured property.");
         Console.WriteLine("- downstream Serilog or other sink fields: excluded because they are beyond the Microsoft.Extensions.Logging provider boundary.");
@@ -232,6 +233,38 @@ internal static class Program
         }
 
         Console.WriteLine("PASS dictionary scopes: Dictionary<string, string> and IReadOnlyDictionary<string, string> values detected; absent and non-string shapes remained clean.");
+    }
+
+    private static void RunDictionaryStateCorpus()
+    {
+        const string label = "coverage-dictionary-state";
+        var sentinel = NewSentinel(label);
+        using (var probe = NewProbe(32))
+        {
+            probe.AddSecret(label, sentinel);
+            using var factory = CreateFactory(probe);
+            PlainLoggingCorpus.StringDictionaryState(factory.CreateLogger("LogLeak.Probe.DictionaryState"), sentinel);
+            var findings = probe.Verify().Findings;
+            Require(findings.Count(finding => finding.SentinelLabel == label && finding.Location == LogLeakLocation.StructuredProperty) == 1, "String-valued Dictionary state was not inspected.");
+        }
+
+        using (var probe = NewProbe(32))
+        {
+            probe.AddSecret(label, sentinel);
+            using var factory = CreateFactory(probe);
+            PlainLoggingCorpus.StringDictionaryState(factory.CreateLogger("LogLeak.Probe.DictionaryState.Absent"), "ordinary-dictionary-state-value");
+            probe.AssertNoLeaks();
+        }
+
+        using (var probe = NewProbe(32))
+        {
+            probe.AddSecret(label, sentinel);
+            using var factory = CreateFactory(probe);
+            PlainLoggingCorpus.NonStringDictionaryState(factory.CreateLogger("LogLeak.Probe.DictionaryState.Excluded"), sentinel);
+            probe.AssertNoLeaks();
+        }
+
+        Console.WriteLine("PASS dictionary state: Dictionary<string, string> values detected; absent and non-string state shapes remained clean, independently of dictionary-scope support.");
     }
 
     private static void RunRedactionAndClassification()

@@ -52,18 +52,18 @@ Registration freezes when the first event is captured or verification starts. A 
 The supported boundary is intentionally frozen to:
 
 - formatted message output, including message templates and source-generated `LoggerMessage` calls;
-- direct string values in structured state, excluding reserved `{OriginalFormat}` metadata;
-- plain string nested scopes;
-- direct string values in templated scopes such as `logger.BeginScope("Authorization {Token}", value)`;
-- direct string values in `IEnumerable<KeyValuePair<string, object?>>` scopes;
-- direct string values in `IEnumerable<KeyValuePair<string, string>>` scopes, including `Dictionary<string, string>`, `IReadOnlyDictionary<string, string>`, and other implementations of those shapes;
 - the string representation of a logging exception.
 
-Matching is exact ordinal literal matching. Non-string scope values and opaque scope objects are excluded; LogLeak does not recursively serialize objects, decode, normalize, hash, encode, or infer unregistered secrets. It does not inspect arbitrary sinks.
+Structured state and scopes are separate supported surfaces:
+
+- structured state inspects direct string values in `IEnumerable<KeyValuePair<string, object?>>` and `IEnumerable<KeyValuePair<string, string>>`, excluding reserved `{OriginalFormat}` metadata; a state object matching both interfaces is inspected once;
+- scopes inspect plain strings, templated direct string values such as `logger.BeginScope("Authorization {Token}", value)`, and direct string values in the same two enumerable shapes, including `Dictionary<string, string>` and `IReadOnlyDictionary<string, string>`.
+
+Matching is exact ordinal literal matching. Non-string state or scope values and opaque objects are excluded; LogLeak does not recursively serialize objects, decode, normalize, hash, encode, or infer unregistered secrets. A sentinel held only in an excluded shape such as `Dictionary<string, int>` can therefore produce a clean result. It does not inspect arbitrary sinks.
 
 ## Bounds and privacy
 
-The deterministic resource contract is identical on `net8.0` and `netstandard2.0`: by default, at most 128 sentinels may be registered, each sentinel is at most 4,096 UTF-16 characters, each inspected text unit is at most 4,096 UTF-16 characters, each event may inspect 1,024 units and retain 256 findings, the probe may retain 4,096 findings overall, and 4,096 events may complete inspection. LogLeak does not use a process-wide heap delta or transient-allocation measurement. A bound breach returns `Inconclusive` and never `Clean`.
+The deterministic resource contract is identical on `net8.0` and `netstandard2.0`: by default, at most 128 sentinels may be registered, each sentinel is at most 4,096 UTF-16 characters, each inspected text unit is at most 4,096 UTF-16 characters, each event may inspect 1,024 units and retain 256 findings, the probe may retain 4,096 findings overall, and 4,096 events may complete inspection. LogLeak does not use a process-wide heap delta or transient-allocation measurement. A bound breach returns `Inconclusive` and never `Clean`. If a formatter or exception representation synchronously logs through the same probe, the nested capture is rejected without consuming capture or per-event budgets and verification becomes sticky `Inconclusive` with a safe reentrancy reason.
 
 Only a clean verification requests best-effort activation and weekly heartbeat signals through `KeelMatrix.Telemetry`. Detected leaks and inconclusive captures do not request activation or heartbeat telemetry. LogLeak sends no sentinel, log content, exception text, category, event name, or property value. Core verification requires no network. Set `KEELMATRIX_NO_TELEMETRY=1` to opt out.
 
@@ -73,7 +73,7 @@ LogLeak verifies only the captured `Microsoft.Extensions.Logging` provider bound
 
 ## Scope boundary
 
-Register `probe.Provider` before opening any scopes that the probe should observe. Scopes opened before provider registration are outside the declared observed boundary and may result in a clean verification even when they contain a registered sentinel. Within the observed boundary, only the supported shallow scope forms above are inspected. A dictionary shape whose value type is neither `string` nor `object` (for example, `Dictionary<string, int>`) is excluded; a sentinel held only in such a value can therefore produce a clean result because that value is outside the supported boundary.
+Register `probe.Provider` before opening any scopes that the probe should observe. Scopes opened before provider registration are outside the declared observed boundary and may result in a clean verification even when they contain a registered sentinel. Within the observed boundary, only the shallow state and scope forms above are inspected. Dictionary support for scopes does not imply dictionary support for state unless the state itself implements one of the two documented enumerable shapes; non-string and opaque shapes remain excluded and can therefore produce a clean result when a sentinel is held only in that value.
 
 ## Troubleshooting
 

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Reflection;
 using KeelMatrix.LogLeak;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -374,6 +375,274 @@ public sealed partial class LogLeakProbeTests
         var fallbackFinding = Assert.Single(fallbackProbe.Verify().Findings);
         Assert.Equal(string.Empty, fallbackFinding.ToString());
         Assert.DoesNotContain(fallbackSentinel, fallbackFinding.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Same_probe_reentrant_logging_is_rejected_and_makes_verification_inconclusive()
+    {
+        const string sentinel = "prefix' (EventId: 42)";
+        using var probe = new LogLeakProbe().AddSecret("credential", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("prefix");
+
+        logger.Log(
+            LogLevel.Warning,
+            new EventId(42),
+            sentinel,
+            null,
+            (state, _) =>
+            {
+                logger.Log(LogLevel.Information, new EventId(43), "nested safe event", null, static (nested, _) => nested);
+                return state;
+            });
+
+        var result = probe.Verify();
+
+        Assert.Equal(LogLeakVerificationStatus.Inconclusive, result.Status);
+        Assert.Equal(1, result.CapturedEventCount);
+        Assert.Contains("reentrant", result.InconclusiveReason!, StringComparison.OrdinalIgnoreCase);
+        Assert.All(result.Findings, finding => Assert.DoesNotContain(sentinel, finding.ToString(), StringComparison.Ordinal));
+        Assert.DoesNotContain(sentinel, result.ToString(), StringComparison.Ordinal);
+
+        var exception = Assert.Throws<LogLeakInconclusiveException>(() => probe.AssertNoLeaks());
+        Assert.DoesNotContain(sentinel, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(sentinel, exception.ToString(), StringComparison.Ordinal);
+        Assert.All(exception.Findings, finding => Assert.DoesNotContain(sentinel, finding.ToString(), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Same_probe_reentrant_logging_does_not_exceed_capture_limit()
+    {
+        var options = new LogLeakOptions(maximumCapturedEvents: 1);
+        using var probe = new LogLeakProbe(options).AddSecret("C", "synthetic-reentrant-capture-1a2b");
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("ReentrantCaptureTests");
+
+        logger.Log(
+            LogLevel.Information,
+            new EventId(1),
+            "outer safe event",
+            null,
+            (state, _) =>
+            {
+                logger.Log(LogLevel.Information, new EventId(2), "nested safe event", null, static (nested, _) => nested);
+                return state;
+            });
+
+        var result = probe.Verify();
+
+        Assert.Equal(1, result.CapturedEventCount);
+        Assert.Equal(LogLeakVerificationStatus.Inconclusive, result.Status);
+        Assert.Contains("reentrant", result.InconclusiveReason!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Same_probe_reentrant_logging_cannot_bypass_per_event_inspection_unit_limit()
+    {
+        var options = new LogLeakOptions(maximumInspectionUnitsPerEvent: 1);
+        using var probe = new LogLeakProbe(options).AddSecret("U", "synthetic-reentrant-unit-3c4d");
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("ReentrantBudgetTests");
+        var state = new[]
+        {
+            new KeyValuePair<string, object?>("First", "safe-first"),
+            new KeyValuePair<string, object?>("Second", "safe-second")
+        };
+
+        logger.Log(
+            LogLevel.Information,
+            new EventId(3),
+            state,
+            null,
+            (_, _) =>
+            {
+                logger.LogInformation("nested safe event");
+                return "safe formatted event";
+            });
+
+        var result = probe.Verify();
+
+        Assert.Equal(LogLeakVerificationStatus.Inconclusive, result.Status);
+        Assert.Equal(0, result.CapturedEventCount);
+        Assert.Contains("reentrant", result.InconclusiveReason!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Same_probe_reentrant_logging_cannot_bypass_per_event_finding_limit()
+    {
+        var options = new LogLeakOptions(maximumFindingsPerEvent: 1);
+        const string sentinel = "synthetic-reentrant-finding-5e6f";
+        using var probe = new LogLeakProbe(options).AddSecret("F", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("ReentrantBudgetTests");
+        var state = new[]
+        {
+            new KeyValuePair<string, object?>("First", sentinel),
+            new KeyValuePair<string, object?>("Second", sentinel)
+        };
+
+        logger.Log(
+            LogLevel.Information,
+            new EventId(4),
+            state,
+            null,
+            (_, _) =>
+            {
+                logger.LogInformation("nested safe event");
+                return "safe formatted event";
+            });
+
+        var result = probe.Verify();
+
+        Assert.Equal(LogLeakVerificationStatus.Inconclusive, result.Status);
+        Assert.Equal(0, result.CapturedEventCount);
+        Assert.Contains("reentrant", result.InconclusiveReason!, StringComparison.OrdinalIgnoreCase);
+        Assert.All(result.Findings, finding => Assert.DoesNotContain(sentinel, finding.ToString(), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Every_probe_owned_registration_failure_sanitizes_fixed_diagnostics()
+    {
+        const string invalidLabelMessage = "Sentinel labels must be short safe identifiers.";
+        AssertRegistrationDiagnosticCollision(invalidLabelMessage, probe => probe.AddSecret(string.Empty, "safe-empty-label-1a2b"));
+        AssertRegistrationDiagnosticCollision(invalidLabelMessage, probe => probe.AddSecret("   ", "safe-whitespace-label-3c4d"));
+        AssertRegistrationDiagnosticCollision(invalidLabelMessage, probe => probe.AddSecret(new string('x', 65), "safe-long-label-5e6f"));
+        AssertRegistrationDiagnosticCollision(invalidLabelMessage, probe => probe.AddSecret("unsafe label", "safe-illegal-label-7a8b"));
+
+        const string nullValueMessage = "Sentinel values must be non-empty.";
+        AssertRegistrationDiagnosticCollision(nullValueMessage, probe => probe.AddSecret("null-value", null!));
+        AssertRegistrationDiagnosticCollision(nullValueMessage, probe => probe.AddSecret("empty-value", string.Empty));
+
+        const string oversizedValueMessage = "The sentinel value exceeds the configured registration limit.";
+        AssertRegistrationDiagnosticCollision(oversizedValueMessage, probe => probe.AddSecret("oversized", new string('x', 4_097)));
+
+        const string duplicateLabelMessage = "Sentinel labels must be unique.";
+        AssertRegistrationDiagnosticCollision(duplicateLabelMessage, probe => probe.AddSecret("existing", "safe-duplicate-value-9c0d"));
+
+        const string overlapMessage = "Sentinel labels and values must not overlap.";
+        AssertRegistrationDiagnosticCollision(overlapMessage, probe => probe.AddSecret("new", "existing-safe-overlap-value-1e2f"));
+
+        const string countMessage = "The sentinel registration limit was reached.";
+        using var countProbe = new LogLeakProbe(new LogLeakOptions(maximumSentinels: 1)).AddSecret("existing", countMessage);
+        var countException = Assert.Throws<LogLeakConfigurationException>(() => countProbe.AddSecret("second", "safe-count-value-3a4b"));
+        Assert.DoesNotContain(countMessage, countException.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(countMessage, countException.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Escaped_diagnostic_objects_retain_only_precomputed_safe_text()
+    {
+        const string sentinel = "synthetic-retained-object-6b7c";
+        LogLeakFinding finding;
+        LogLeakVerificationResult result;
+        LogLeakAssertionException assertion;
+
+        using (var probe = new LogLeakProbe().AddSecret("R", sentinel))
+        using (var loggerFactory = CreateLoggerFactory(probe))
+        {
+            loggerFactory.CreateLogger("RetentionTests").LogInformation(sentinel);
+            result = probe.Verify();
+            finding = Assert.Single(result.Findings);
+            assertion = Assert.Throws<LogLeakAssertionException>(() => probe.AssertNoLeaks());
+            probe.Dispose();
+        }
+
+        var outputs = new[]
+        {
+            finding.ToString(),
+            result.ToString(),
+            assertion.Message,
+            assertion.ToString()
+        };
+        Assert.All(outputs, output => Assert.DoesNotContain(sentinel, output, StringComparison.Ordinal));
+        Assert.All(assertion.Findings, escapedFinding => Assert.DoesNotContain(sentinel, escapedFinding.ToString(), StringComparison.Ordinal));
+
+        foreach (var escaped in new object[] { finding, result, assertion })
+        {
+            for (var type = escaped.GetType(); type is not null; type = type.BaseType)
+            {
+                foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+                {
+                    Assert.DoesNotContain("sentinelValues", field.Name, StringComparison.OrdinalIgnoreCase);
+                    Assert.NotEqual(typeof(string[]), field.FieldType);
+                    var value = field.GetValue(escaped);
+                    if (value is string text)
+                    {
+                        Assert.DoesNotContain(sentinel, text, StringComparison.Ordinal);
+                    }
+                    else if (value is IEnumerable<string> texts)
+                    {
+                        Assert.DoesNotContain(texts, text => text.Contains(sentinel, StringComparison.Ordinal));
+                    }
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void Detects_string_valued_dictionary_structured_state()
+    {
+        const string sentinel = "synthetic-string-dictionary-state-8d9e";
+        using var probe = new LogLeakProbe().AddSecret("S", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("StructuredStateTests");
+
+        logger.Log(
+            LogLevel.Information,
+            new EventId(5),
+            new Dictionary<string, string> { ["Authorization"] = sentinel },
+            null,
+            static (_, _) => "safe formatted state");
+
+        var finding = Assert.Single(probe.Verify().Findings);
+        Assert.Equal(LogLeakLocation.StructuredProperty, finding.Location);
+        Assert.Equal("Authorization", finding.PropertyName);
+    }
+
+    [Fact]
+    public void String_valued_dictionary_structured_state_without_registered_sentinel_is_clean()
+    {
+        using var probe = new LogLeakProbe().AddSecret("S", "synthetic-absent-string-dictionary-state-a1b2");
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("StructuredStateTests");
+
+        logger.Log(
+            LogLevel.Information,
+            new EventId(6),
+            new Dictionary<string, string> { ["Authorization"] = "ordinary-state-value" },
+            null,
+            static (_, _) => "safe formatted state");
+
+        Assert.Equal(LogLeakVerificationStatus.Clean, probe.Verify().Status);
+    }
+
+    [Fact]
+    public void Excluded_non_string_structured_state_remains_clean_and_dual_state_is_inspected_once()
+    {
+        const string sentinel = "synthetic-opaque-state-b3c4";
+        using var probe = new LogLeakProbe()
+            .AddSecret("O", sentinel)
+            .AddSecret("D", "synthetic-dual-state-d5e6");
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("StructuredStateTests");
+
+        logger.Log(
+            LogLevel.Information,
+            new EventId(7),
+            new Dictionary<string, OpaqueScope> { ["Opaque"] = new OpaqueScope(sentinel) },
+            null,
+            static (_, _) => "safe opaque state");
+        logger.Log(
+            LogLevel.Information,
+            new EventId(8),
+            new DualStructuredState("synthetic-dual-state-d5e6"),
+            null,
+            static (_, _) => "safe dual state");
+
+        var findings = probe.Verify().Findings;
+
+        Assert.DoesNotContain(findings, finding => finding.SentinelLabel == "O");
+        Assert.Single(findings.Where(finding => finding.SentinelLabel == "D"));
     }
 
     [Fact]
@@ -790,6 +1059,15 @@ public sealed partial class LogLeakProbeTests
     private static ILoggerFactory CreateLoggerFactory(LogLeakProbe probe)
         => LoggerFactory.Create(builder => builder.AddProvider(probe.Provider));
 
+    private static void AssertRegistrationDiagnosticCollision(string registeredValue, Action<LogLeakProbe> action)
+    {
+        using var probe = new LogLeakProbe().AddSecret("existing", registeredValue);
+        var exception = Assert.Throws<LogLeakConfigurationException>(() => action(probe));
+
+        Assert.DoesNotContain(registeredValue, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(registeredValue, exception.ToString(), StringComparison.Ordinal);
+    }
+
     private static partial class GeneratedLogging
     {
         [LoggerMessage(EventId = 100, Level = LogLevel.Warning, Message = "source generated value {Value}")]
@@ -838,5 +1116,28 @@ public sealed partial class LogLeakProbeTests
         }
 
         public override string ToString() => value;
+    }
+
+    private sealed class DualStructuredState : IEnumerable<KeyValuePair<string, object?>>, IEnumerable<KeyValuePair<string, string>>
+    {
+        private readonly string value;
+
+        public DualStructuredState(string value)
+        {
+            this.value = value;
+        }
+
+        IEnumerator<KeyValuePair<string, object?>> IEnumerable<KeyValuePair<string, object?>>.GetEnumerator()
+        {
+            yield return new KeyValuePair<string, object?>("ObjectValue", value);
+        }
+
+        IEnumerator<KeyValuePair<string, string>> IEnumerable<KeyValuePair<string, string>>.GetEnumerator()
+        {
+            yield return new KeyValuePair<string, string>("StringValue", value);
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+            => ((IEnumerable<KeyValuePair<string, object?>>)this).GetEnumerator();
     }
 }

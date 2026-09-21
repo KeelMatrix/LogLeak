@@ -74,37 +74,15 @@ jobs:
           -Version $env:RELEASE_VERSION
 
   package:
-    name: Package / inspect and consume
     needs:
       - resolve-version
       - platform
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
-    steps:
-      - name: Check out tagged commit
-        uses: actions/checkout@v7
-
-      - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Run repository package gate
-        shell: pwsh
-        run: >-
-          ./build/Invoke-PackageGate.ps1
-          -Stage All
-          -Version $env:RELEASE_VERSION
-
-      - name: Upload verified release artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: logleak-release-artifacts
-          path: artifacts/gate/packages
-          if-no-files-found: error
-          retention-days: 7
+    uses: ./.github/workflows/package-gate.yml
+    with:
+      version: ${{ needs.resolve-version.outputs.version }}
+      upload_artifacts: true
+    permissions:
+      contents: read
 
   publish:
     name: Publish exact release artifacts

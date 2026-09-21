@@ -29,7 +29,7 @@ public enum LogLeakVerificationStatus
     /// <summary>At least one registered sentinel was found in a supported field.</summary>
     LeaksDetected,
 
-    /// <summary>A capture or resource bound prevented a conclusive result.</summary>
+    /// <summary>A capture/resource bound or same-probe reentrant capture prevented a conclusive result.</summary>
     Inconclusive
 }
 
@@ -124,10 +124,17 @@ public sealed class LogLeakFinding
         EventId = eventId;
         EventName = eventName;
         PropertyName = propertyName;
-        this.sentinelValues = sentinelValues;
+        diagnostic = LogLeakDiagnostics.SafeFinding(
+            sentinelLabel,
+            location,
+            categoryName,
+            eventId,
+            eventName,
+            propertyName,
+            sentinelValues);
     }
 
-    private readonly IReadOnlyList<string> sentinelValues;
+    private readonly string diagnostic;
 
     /// <summary>Gets the safe label supplied when the sentinel was registered.</summary>
     public string SentinelLabel { get; }
@@ -149,7 +156,7 @@ public sealed class LogLeakFinding
 
     /// <summary>Returns a safe diagnostic that never includes the registered sentinel value.</summary>
     public override string ToString()
-        => LogLeakDiagnostics.SafeFinding(SentinelLabel, Location, CategoryName, EventId, EventName, PropertyName, sentinelValues);
+        => diagnostic;
 }
 
 /// <summary>
@@ -167,13 +174,21 @@ public sealed class LogLeakVerificationResult
         Status = status;
         Findings = findings;
         CapturedEventCount = capturedEventCount;
-        InconclusiveReason = inconclusiveReason;
-        this.sentinelValues = sentinelValues;
+        InconclusiveReason = inconclusiveReason is null
+            ? null
+            : LogLeakDiagnostics.SafeInconclusiveReason(inconclusiveReason, sentinelValues);
+        diagnostic = LogLeakDiagnostics.SafeVerificationResult(Status, Findings.Count, CapturedEventCount, InconclusiveReason, sentinelValues);
+        InconclusiveDiagnostic = InconclusiveReason is null
+            ? string.Empty
+            : LogLeakDiagnostics.SafeInconclusiveMessage(InconclusiveReason, sentinelValues);
+        AssertionDiagnostic = LogLeakDiagnostics.SafeAssertionMessage(Findings, sentinelValues);
     }
 
-    private readonly IReadOnlyList<string> sentinelValues;
+    private readonly string diagnostic;
 
-    internal IReadOnlyList<string> SentinelValues => sentinelValues;
+    internal string InconclusiveDiagnostic { get; }
+
+    internal string AssertionDiagnostic { get; }
 
     /// <summary>Gets the verification status.</summary>
     public LogLeakVerificationStatus Status { get; }
@@ -189,5 +204,5 @@ public sealed class LogLeakVerificationResult
 
     /// <summary>Returns a safe summary that contains no captured log content.</summary>
     public override string ToString()
-        => LogLeakDiagnostics.SafeVerificationResult(Status, Findings.Count, CapturedEventCount, InconclusiveReason, sentinelValues);
+        => diagnostic;
 }

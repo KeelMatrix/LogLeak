@@ -50,6 +50,12 @@ jobs:
         shell: pwsh
         run: ./build/Invoke-DependencyAudit.ps1
 
-      - name: Run package, archive, and consumer gate
-        shell: pwsh
-        run: ./build/Invoke-PackageGate.ps1 -Stage All
+
+  package-gate:
+    name: Package / inspect and consume (non-publishing)
+    uses: ./.github/workflows/package-gate.yml
+    with:
+      version: '0.1.0'
+      upload_artifacts: false
+    permissions:
+      contents: read

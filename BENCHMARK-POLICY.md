@@ -1,6 +1,6 @@
 # Probe benchmark and resource policy
 
-The CPU performance gate is a probe-only resource contract. It uses an environment-relative reference workload; it is not a cross-platform performance guarantee. Sampled heap delta remains visible as diagnostic evidence and never decides pass/fail because managed-heap accounting differs across operating systems and runtimes. Capture count, overflow behavior, inspection budgets, and finding/payload limits remain deterministic resource checks on every platform.
+The CPU performance gate is a probe-only resource contract. It uses an environment-relative reference workload; it is not a cross-platform performance guarantee. Sampled heap delta remains visible as diagnostic evidence and never decides pass/fail because managed-heap accounting differs across operating systems and runtimes. Capture count, overflow behavior, inspection budgets, finding/payload limits, and same-probe reentrancy rejection remain deterministic resource checks on every platform.
 
 ## Fixed rule
 

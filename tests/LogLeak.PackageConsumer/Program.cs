@@ -9,6 +9,50 @@ using (var cleanFactory = LoggerFactory.Create(builder => builder.AddProvider(cl
     cleanProbe.AssertNoLeaks();
 }
 
+const string stateSentinel = "synthetic-consumer-dictionary-state-23cd";
+using var stateProbe = new LogLeakProbe().AddSecret("S", stateSentinel);
+using (var stateFactory = LoggerFactory.Create(builder => builder.AddProvider(stateProbe.Provider)))
+{
+    stateFactory.CreateLogger("PackageConsumer").Log(
+        LogLevel.Information,
+        new EventId(11),
+        new Dictionary<string, string> { ["Authorization"] = stateSentinel },
+        null,
+        static (_, _) => "safe dictionary state event");
+}
+
+var stateResult = stateProbe.Verify();
+if (stateResult.Status != LogLeakVerificationStatus.LeaksDetected
+    || !stateResult.Findings.Any(finding => finding.Location == LogLeakLocation.StructuredProperty))
+{
+    throw new InvalidOperationException("The netstandard2.0 package asset did not inspect string-valued dictionary state.");
+}
+
+const string reentrantSentinel = "synthetic-consumer-reentrant-45ef";
+using var reentrantProbe = new LogLeakProbe().AddSecret("R", reentrantSentinel);
+using (var reentrantFactory = LoggerFactory.Create(builder => builder.AddProvider(reentrantProbe.Provider)))
+{
+    var reentrantLogger = reentrantFactory.CreateLogger("PackageConsumer");
+    reentrantLogger.Log(
+        LogLevel.Information,
+        new EventId(12),
+        "outer safe event",
+        null,
+        (state, _) =>
+        {
+            reentrantLogger.LogInformation("nested safe event");
+            return state;
+        });
+}
+
+var reentrantResult = reentrantProbe.Verify();
+if (reentrantResult.Status != LogLeakVerificationStatus.Inconclusive
+    || reentrantResult.CapturedEventCount != 1
+    || !reentrantResult.InconclusiveReason!.Contains("reentrant", StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException("The netstandard2.0 package asset did not reject same-probe reentrant capture.");
+}
+
 const string plantedValue = "synthetic-consumer-planted-91de";
 using var plantedProbe = new LogLeakProbe()
     .AddSecret("leak", plantedValue);

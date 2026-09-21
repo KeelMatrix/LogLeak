@@ -36,7 +36,9 @@ pwsh ./build/Invoke-PackageGate.ps1 -Stage Smoke
 pwsh ./build/Invoke-PackageGate.ps1 -Stage All
 ```
 
-The consumer smoke restores `KeelMatrix.LogLeak` only from the just-built local package. Its package cache, HTTP cache, CLI home, and project directory are fresh for each run. The isolated consumer targets `net6.0`, so NuGet must resolve the package's `netstandard2.0` assembly; the gate proves that from the generated `PackageConsumer.deps.json`. It exercises a clean path, a planted leak, and a deterministic capture-bound breach that fails explicitly as `Inconclusive`.
+The consumer smoke restores `KeelMatrix.LogLeak` only from the just-built local package. Its package cache, HTTP cache, CLI home, and project directory are fresh for each run. The isolated consumer targets `net6.0`, so NuGet must resolve the package's `netstandard2.0` assembly; the gate proves that from the generated `PackageConsumer.deps.json`. It exercises clean, planted-leak, string-valued dictionary-state, same-probe reentrancy, and deterministic capture-bound paths; unsafe or bounded paths fail explicitly as `Inconclusive`.
+
+The release package job is extracted to `.github/workflows/package-gate.yml`. It installs both the `10.0.x` SDK and the `6.0.x` SDK/runtime required by the framework-dependent consumer, then runs the exact package gate. CI calls this reusable workflow with artifact upload disabled, providing a non-publishing release-package-job path; the workflow is also manually dispatchable with a package version for the same smoke.
 
 ## Formatting and analysis
 
