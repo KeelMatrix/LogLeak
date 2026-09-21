@@ -15,6 +15,7 @@ public sealed class LogLeakProbe : IDisposable
     private readonly ILogLeakTelemetry telemetry;
     private readonly CaptureLoggerProvider provider;
     private IExternalScopeProvider scopeProvider = new LoggerExternalScopeProvider();
+    private string[]? sentinelValuesThisEvent;
     private int capturedEventCount;
     private bool registrationFrozen;
     private bool disposed;
@@ -86,17 +87,17 @@ public sealed class LogLeakProbe : IDisposable
             ThrowIfDisposed();
             if (registrationFrozen)
             {
-                throw new LogLeakConfigurationException("Sentinel registration is closed once capture or verification begins.");
+                throw new LogLeakConfigurationException("Sentinel registration is closed once capture or verification begins.", GetSentinelValuesSnapshot());
             }
 
             if (sentinels.Count >= options.MaximumSentinels)
             {
-                throw new LogLeakConfigurationException("The sentinel registration limit was reached.");
+                throw new LogLeakConfigurationException("The sentinel registration limit was reached.", GetSentinelValuesSnapshot());
             }
 
             if (sentinels.Any(existing => string.Equals(existing.Label, label, StringComparison.Ordinal)))
             {
-                throw new LogLeakConfigurationException("Sentinel labels must be unique.");
+                throw new LogLeakConfigurationException("Sentinel labels must be unique.", GetSentinelValuesSnapshot());
             }
 
             if (ContainsOrdinal(label, value)
@@ -107,7 +108,7 @@ public sealed class LogLeakProbe : IDisposable
                     || ContainsOrdinal(existing.Label, value)
                     || ContainsOrdinal(value, existing.Label)))
             {
-                throw new LogLeakConfigurationException("Sentinel labels and values must not overlap.");
+                throw new LogLeakConfigurationException("Sentinel labels and values must not overlap.", GetSentinelValuesSnapshot());
             }
 
             sentinels.Add(new RegisteredSentinel(label, value));
@@ -133,11 +134,13 @@ public sealed class LogLeakProbe : IDisposable
             ThrowIfDisposed();
             registrationFrozen = true;
             var status = GetStatus();
+            var sentinelValues = GetSentinelValuesSnapshot();
             result = new LogLeakVerificationResult(
                 status,
                 findings.ToArray(),
                 capturedEventCount,
-                status == LogLeakVerificationStatus.Inconclusive ? GetInconclusiveReason() : null);
+                status == LogLeakVerificationStatus.Inconclusive ? GetInconclusiveReason(sentinelValues) : null,
+                sentinelValues);
         }
 
         if (result.Status == LogLeakVerificationStatus.Clean)
@@ -159,12 +162,12 @@ public sealed class LogLeakProbe : IDisposable
         var result = Verify();
         if (result.Status == LogLeakVerificationStatus.Inconclusive)
         {
-            throw new LogLeakInconclusiveException(result.InconclusiveReason!, result.Findings);
+            throw new LogLeakInconclusiveException(result.InconclusiveReason!, result.Findings, result.SentinelValues);
         }
 
         if (result.Findings.Count > 0)
         {
-            throw new LogLeakAssertionException(result.Findings);
+            throw new LogLeakAssertionException(result.Findings, result.SentinelValues);
         }
     }
 
@@ -182,6 +185,7 @@ public sealed class LogLeakProbe : IDisposable
 
             findings.Clear();
             sentinels.Clear();
+            sentinelValuesThisEvent = null;
             capturedEventCount = 0;
             registrationFrozen = false;
             eventOverflowed = false;
@@ -284,19 +288,16 @@ public sealed class LogLeakProbe : IDisposable
             findingsThisEvent = 0;
             categoryNameThisEvent = categoryName;
             eventIdThisEvent = eventId;
-            var allocationStart = GetAllocatedBytes();
+            sentinelValuesThisEvent = GetSentinelValuesSnapshot();
             try
             {
                 var formatted = formatter(state, exception);
                 EnsurePayloadWithinLimit(formatted, "formatted message");
-                EnsureTransientAllocationWithinLimit(allocationStart);
 
                 var exceptionRepresentation = exception is null ? null : GetExceptionRepresentation(exception);
                 EnsurePayloadWithinLimit(exceptionRepresentation, "exception representation");
-                EnsureTransientAllocationWithinLimit(allocationStart);
 
                 Inspect(categoryName, eventId, formatted, state, scopeProvider, exceptionRepresentation);
-                EnsureTransientAllocationWithinLimit(allocationStart);
                 capturedEventCount++;
             }
             catch (InspectionBudgetReachedException)
@@ -314,6 +315,7 @@ public sealed class LogLeakProbe : IDisposable
             {
                 categoryNameThisEvent = null;
                 eventIdThisEvent = default;
+                sentinelValuesThisEvent = null;
             }
         }
     }
@@ -348,10 +350,14 @@ public sealed class LogLeakProbe : IDisposable
         {
             InspectStringValuedEntries(entries, LogLeakLocation.Scope, categoryNameThisEvent, eventIdThisEvent, "scope entry", "scope value");
         }
+        else if (scope is IEnumerable<KeyValuePair<string, string>> stringEntries)
+        {
+            InspectStringValuedEntries(stringEntries, LogLeakLocation.Scope, categoryNameThisEvent, eventIdThisEvent, "scope entry", "scope value");
+        }
     }
 
-    private void InspectStringValuedEntries(
-        IEnumerable<KeyValuePair<string, object?>> entries,
+    private void InspectStringValuedEntries<TValue>(
+        IEnumerable<KeyValuePair<string, TValue>> entries,
         LogLeakLocation location,
         string? categoryName,
         EventId eventId,
@@ -433,7 +439,8 @@ public sealed class LogLeakProbe : IDisposable
                     GetSafeMetadata(categoryName),
                     GetSafeEventId(eventId.Id),
                     GetSafeMetadata(eventId.Name),
-                    location == LogLeakLocation.StructuredProperty ? GetSafeMetadata(propertyName) : null));
+                    location == LogLeakLocation.StructuredProperty ? GetSafeMetadata(propertyName) : null,
+                    sentinelValuesThisEvent ?? Array.Empty<string>()));
                 findingsThisEvent++;
             }
         }
@@ -498,20 +505,6 @@ public sealed class LogLeakProbe : IDisposable
         }
     }
 
-    private void EnsureTransientAllocationWithinLimit(long allocationStart)
-    {
-        if (allocationStart < 0)
-        {
-            return;
-        }
-
-        var allocated = GetAllocatedBytes() - allocationStart;
-        if (allocated > options.MaximumTransientAllocationBytes)
-        {
-            ExceedAggregateBudget("per-event transient-allocation", options.MaximumTransientAllocationBytes, allocated);
-        }
-    }
-
     private void EnsurePayloadWithinLimit(string? text, string unit)
     {
         if (text is not null && text.Length > options.MaximumPayloadCharacters)
@@ -545,27 +538,30 @@ public sealed class LogLeakProbe : IDisposable
             : LogLeakVerificationStatus.LeaksDetected;
     }
 
-    private string GetInconclusiveReason()
+    private string GetInconclusiveReason(IReadOnlyList<string> sentinelValues)
     {
+        string reason;
         if (eventOverflowed)
         {
-            return "the capture event budget of " + options.MaximumCapturedEvents.ToString(System.Globalization.CultureInfo.InvariantCulture) + " events was reached";
+            reason = "the capture event budget of " + options.MaximumCapturedEvents.ToString(System.Globalization.CultureInfo.InvariantCulture) + " events was reached";
         }
-
-        if (aggregateBudgetExceeded)
+        else if (aggregateBudgetExceeded)
         {
-            return "the " + aggregateBudgetName + " budget of " + aggregateBudgetLimit.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            reason = "the " + aggregateBudgetName + " budget of " + aggregateBudgetLimit.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 + " was reached at " + aggregateBudgetObserved.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
-
-        if (payloadLimitExceeded)
+        else if (payloadLimitExceeded)
         {
-            return "an inspected text unit exceeded the configured payload limit of "
+            reason = "an inspected text unit exceeded the configured payload limit of "
                 + options.MaximumPayloadCharacters.ToString(System.Globalization.CultureInfo.InvariantCulture)
                 + " characters";
         }
+        else
+        {
+            reason = "the provider-boundary capture encountered an unsupported logging failure";
+        }
 
-        return "the provider-boundary capture encountered an unsupported logging failure";
+        return LogLeakDiagnostics.SafeInconclusiveReason(reason, sentinelValues);
     }
 
     private static string GetExceptionRepresentation(Exception exception)
@@ -607,14 +603,8 @@ public sealed class LogLeakProbe : IDisposable
         }
     }
 
-    private static long GetAllocatedBytes()
-    {
-#if NET8_0_OR_GREATER
-        return GC.GetAllocatedBytesForCurrentThread();
-#else
-        return GC.GetTotalMemory(forceFullCollection: false);
-#endif
-    }
+    private string[] GetSentinelValuesSnapshot()
+        => sentinels.Select(static sentinel => sentinel.Value).ToArray();
 
     private static bool ContainsOrdinal(string text, string value)
     {

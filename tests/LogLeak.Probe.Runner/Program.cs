@@ -20,7 +20,6 @@ internal static class Program
     private const int MaximumInspectionUnitsPerEvent = 1_024;
     private const int MaximumFindingsPerEvent = 256;
     private const int MaximumFindingsTotal = 4_096;
-    private const long MaximumTransientAllocationBytes = 1_048_576;
 
     private static int Main(string[] args)
     {
@@ -92,6 +91,7 @@ internal static class Program
         RunExpectedFinding("source-generated structured property", LogLeakLocation.StructuredProperty, (logger, sentinel) => GeneratedLoggingCorpus.SourceGenerated(logger, sentinel));
         RunExpectedFinding("direct structured state value", LogLeakLocation.StructuredProperty, PlainLoggingCorpus.StructuredState);
         RunExpectedFinding("nested scope value", LogLeakLocation.Scope, PlainLoggingCorpus.NestedScopes);
+        RunDictionaryScopeCorpus();
         RunExpectedFinding("exception representation", LogLeakLocation.ExceptionRepresentation, PlainLoggingCorpus.Exception);
         RunRegistrationCorpus();
         RunRedactionAndClassification();
@@ -101,6 +101,7 @@ internal static class Program
         RunExcludedFieldCorpus();
         RunPayloadBoundCorpus();
         RunAggregateInspectionBudgetCorpus();
+        RunResourceStabilityCorpus();
 
         Console.WriteLine("Unsupported fixture recorded: arbitrary structured objects are not serialized or inspected; this avoids hidden object-graph behavior.");
         Console.WriteLine();
@@ -110,11 +111,12 @@ internal static class Program
     {
         Console.WriteLine("SUPPORTED FIELD CONTRACT");
         Console.WriteLine("- formatted message: formatter output inspected with ordinal literal containment.");
-        Console.WriteLine("- structured property: direct string values in the framework's enumerable key/value state inspected except the reserved {OriginalFormat} template metadata key; values are never serialized.");
-        Console.WriteLine("- scope: direct string scope states inspected; structured or arbitrary scope objects are excluded.");
+        Console.WriteLine("- structured property: direct string values in IEnumerable<KeyValuePair<string, object?>> state inspected except the reserved {OriginalFormat} template metadata key; values are never serialized.");
+        Console.WriteLine("- scope: plain strings, IEnumerable<KeyValuePair<string, object?>> entries, and IEnumerable<KeyValuePair<string, string>> entries are inspected; other structured or arbitrary scope objects are excluded.");
         Console.WriteLine("- exception representation: exception.ToString() inspected with ordinal literal containment; exception payload is never emitted.");
+        Console.WriteLine("- registration bound: at most 128 sentinel values by default, each at most 4096 UTF-16 characters.");
         Console.WriteLine($"- payload bound: every inspected text unit is limited to {MaximumPayloadCharacters} UTF-16 characters (approximately 8 KiB of UTF-16 character data); this covers ordinary test messages while rejecting pathological payloads, with no truncation; exceeding it is explicitly inconclusive.");
-        Console.WriteLine($"- aggregate resource budget: at most {MaximumInspectionUnitsPerEvent} structured-entry/scope/text inspection units and {MaximumFindingsPerEvent} findings per event; transient allocation is guarded against a {MaximumTransientAllocationBytes:N0}-byte per-event budget measured on the provider thread; any exceeded budget is explicit inconclusive.");
+        Console.WriteLine($"- aggregate resource budget: at most {MaximumInspectionUnitsPerEvent} structured-entry/scope/text inspection units and {MaximumFindingsPerEvent} findings per event; any exceeded budget is explicit inconclusive.");
         Console.WriteLine($"- retained capture budget: at most the configured event count and {MaximumFindingsPerEvent} findings per event ({MaximumFindingsTotal:N0} total findings by default); captured text is not retained.");
         Console.WriteLine("EXCLUDED FIELD CONTRACT");
         Console.WriteLine("- non-string state/scope objects: excluded because recursive serialization or ToString would be unsafe and unreliable.");
@@ -143,7 +145,7 @@ internal static class Program
             PlainLoggingCorpus.NestedScopes(logger, unrelatedValue);
             GeneratedLoggingCorpus.SourceGenerated(logger, unrelatedValue);
             PlainLoggingCorpus.Exception(logger, unrelatedValue);
-            PlainLoggingCorpus.Redacted(logger, unrelatedValue);
+            PlainLoggingCorpus.Redacted(logger, unrelatedValue, redactionEnabled: true);
             probe.AssertNoLeaks();
         }
 
@@ -200,16 +202,71 @@ internal static class Program
         Console.WriteLine($"PASS {name}: detected label '{label}' at {expectedLocation}.");
     }
 
+    private static void RunDictionaryScopeCorpus()
+    {
+        const string label = "coverage-dictionary-scope";
+        var sentinel = NewSentinel(label);
+        using (var probe = NewProbe(32))
+        {
+            probe.AddSecret(label, sentinel);
+            using var factory = CreateFactory(probe);
+            PlainLoggingCorpus.StringDictionaryScopes(factory.CreateLogger("LogLeak.Probe.DictionaryScope"), sentinel);
+            var findings = probe.Verify().Findings;
+            Require(findings.Count(finding => finding.SentinelLabel == label && finding.Location == LogLeakLocation.Scope) == 2, "String-valued Dictionary and IReadOnlyDictionary scopes were not both inspected.");
+        }
+
+        using (var probe = NewProbe(32))
+        {
+            probe.AddSecret(label, sentinel);
+            using var factory = CreateFactory(probe);
+            PlainLoggingCorpus.StringDictionaryScopes(factory.CreateLogger("LogLeak.Probe.DictionaryScope.Absent"), "ordinary-dictionary-value");
+            probe.AssertNoLeaks();
+        }
+
+        using (var probe = NewProbe(32))
+        {
+            probe.AddSecret(label, sentinel);
+            using var factory = CreateFactory(probe);
+            PlainLoggingCorpus.NonStringDictionaryScope(factory.CreateLogger("LogLeak.Probe.DictionaryScope.Excluded"), sentinel);
+            probe.AssertNoLeaks();
+        }
+
+        Console.WriteLine("PASS dictionary scopes: Dictionary<string, string> and IReadOnlyDictionary<string, string> values detected; absent and non-string shapes remained clean.");
+    }
+
     private static void RunRedactionAndClassification()
     {
         const string label = "coverage-redaction";
         var sentinel = NewSentinel(label);
-        using var probe = NewProbe(32);
-        probe.AddSecret(label, sentinel);
-        using var factory = CreateFactory(probe);
-        PlainLoggingCorpus.Redacted(factory.CreateLogger("LogLeak.Probe.Redaction"), sentinel);
-        probe.AssertNoLeaks();
-        Console.WriteLine("PASS redaction/classification: redacted text is absent and opaque objects are conservatively unsupported.");
+        using (var probe = NewProbe(32))
+        {
+            probe.AddSecret(label, sentinel);
+            using var factory = CreateFactory(probe);
+            var evidence = PlainLoggingCorpus.Redacted(factory.CreateLogger("LogLeak.Probe.Redaction.Enabled"), sentinel, redactionEnabled: true);
+            Require(evidence.WasClassified && evidence.RedactionEnabled, "The enabled redaction fixture did not classify and redact the registered input.");
+            Require(!string.Equals(evidence.FormattedValue, sentinel, StringComparison.Ordinal), "The enabled redaction fixture passed the raw value to the formatted field.");
+            Require(!string.Equals(evidence.StructuredValue, sentinel, StringComparison.Ordinal), "The enabled redaction fixture passed the raw value to the structured field.");
+            Require(!string.Equals(evidence.FormattedValue, evidence.StructuredValue, StringComparison.Ordinal), "The enabled redaction fixture did not exercise its formatted and structured outputs independently.");
+            Require(probe.Verify().Status == LogLeakVerificationStatus.Clean, "The enabled redaction fixture was not clean at the provider boundary.");
+        }
+
+        using (var probe = NewProbe(32))
+        {
+            probe.AddSecret(label, sentinel);
+            using var factory = CreateFactory(probe);
+            var evidence = PlainLoggingCorpus.Redacted(factory.CreateLogger("LogLeak.Probe.Redaction.Bypassed"), sentinel, redactionEnabled: false);
+            Require(evidence.WasClassified && !evidence.RedactionEnabled, "The bypassed redaction fixture did not exercise the disabled path.");
+            Require(string.Equals(evidence.FormattedValue, sentinel, StringComparison.Ordinal), "The bypassed fixture did not pass the raw value through the formatted field.");
+            Require(string.Equals(evidence.StructuredValue, sentinel, StringComparison.Ordinal), "The bypassed fixture did not pass the raw value through the structured field.");
+            var failure = CaptureProbeFailure(probe);
+            Require(failure is LogLeakAssertionException, "The bypassed redaction fixture did not produce a safe assertion failure.");
+            var findings = probe.Verify().Findings;
+            Require(findings.Any(finding => finding.Location == LogLeakLocation.FormattedMessage), "The bypassed fixture did not classify the formatted raw value.");
+            Require(findings.Any(finding => finding.Location == LogLeakLocation.StructuredProperty), "The bypassed fixture did not classify the structured raw value.");
+            Require(!failure.ToString().Contains(sentinel, StringComparison.Ordinal), "The bypassed redaction assertion exposed the registered value.");
+        }
+
+        Console.WriteLine("PASS redaction/classification: enabled processing kept both formatted and structured fields clean; bypassed processing was detected with a safe assertion.");
     }
 
     private static void RunRegistrationCorpus()
@@ -452,7 +509,7 @@ internal static class Program
         Require(failure is LogLeakInconclusiveException && state.EnumerationCount < entryCount, "The aggregate state fixture was fully enumerated before the conservative overflow result.");
         Require(!failure.ToString().Contains(sentinel, StringComparison.Ordinal), "The aggregate overflow diagnostic exposed a registered sentinel.");
         Require(failure.ToString().Contains("inspection-unit", StringComparison.Ordinal), "The large state did not stop on the configured inspection-unit budget.");
-        Console.WriteLine($"AGGREGATE_STATE=expected-inconclusive; entries={entryCount}; enumerated={state.EnumerationCount}; inspection-unit-budget={MaximumInspectionUnitsPerEvent}; finding-budget={MaximumFindingsPerEvent}; transient-allocation-budget={MaximumTransientAllocationBytes}; result={failure.GetType().Name}; diagnostic-safe=True");
+        Console.WriteLine($"AGGREGATE_STATE=expected-inconclusive; entries={entryCount}; enumerated={state.EnumerationCount}; inspection-unit-budget={MaximumInspectionUnitsPerEvent}; finding-budget={MaximumFindingsPerEvent}; result={failure.GetType().Name}; diagnostic-safe=True");
 
         var firstLabel = "aggregate-state-first";
         var firstSentinel = NewSentinel(firstLabel);
@@ -507,14 +564,50 @@ internal static class Program
         Require(countableScopeFailure is LogLeakInconclusiveException && countableScopes.EnumerationCount < scopeCount, "The countable scope collection was not bounded during enumeration.");
         Console.WriteLine($"AGGREGATE_SCOPE_COUNTABLE=expected-inconclusive; extent={countableScopes.ScopeCount}; enumerated={countableScopes.EnumerationCount}; result={countableScopeFailure.GetType().Name}");
 
-        using var transientProbe = NewProbe(8, maximumPayloadCharacters: 2_000_000, maximumTransientAllocationBytes: 1_024);
-        transientProbe.AddSecret("aggregate-transient", NewSentinel("aggregate-transient"));
-        using var transientFactory = CreateFactory(transientProbe);
-        transientFactory.CreateLogger("LogLeak.Probe.Aggregate.Transient").Log(LogLevel.Information, new EventId(924), "safe", null, static (_, _) => new string('x', 4_096));
-        var transientFailure = CaptureProbeFailure(transientProbe);
-        Require(transientFailure is LogLeakInconclusiveException && transientFailure.ToString().Contains("transient-allocation", StringComparison.Ordinal), "The transient allocation policy did not produce a named inconclusive result.");
-        Console.WriteLine($"AGGREGATE_TRANSIENT=expected-inconclusive; transient-allocation-budget=1,024; result={transientFailure.GetType().Name}; message-names-budget=True");
         Console.WriteLine();
+    }
+
+    private static void RunResourceStabilityCorpus()
+    {
+        const string cleanLabel = "resource-stability-clean";
+        var cleanSentinel = NewSentinel(cleanLabel);
+        using var cleanProbe = NewProbe(8);
+        cleanProbe.AddSecret(cleanLabel, cleanSentinel);
+        using var cleanFactory = CreateFactory(cleanProbe);
+        cleanFactory.CreateLogger("LogLeak.Probe.ResourceStability").LogInformation("safe event");
+        var cleanBefore = cleanProbe.Verify();
+        RunUnrelatedAllocationAndGc();
+        var cleanAfter = cleanProbe.Verify();
+        Require(cleanBefore.Status == LogLeakVerificationStatus.Clean && cleanAfter.Status == cleanBefore.Status && cleanAfter.CapturedEventCount == cleanBefore.CapturedEventCount, "Unrelated allocations or a following GC changed a clean verification result.");
+
+        const string leakLabel = "resource-stability-leak";
+        var leakSentinel = NewSentinel(leakLabel);
+        using var leakProbe = NewProbe(8);
+        leakProbe.AddSecret(leakLabel, leakSentinel);
+        using var leakFactory = CreateFactory(leakProbe);
+        leakFactory.CreateLogger("LogLeak.Probe.ResourceStability").LogInformation(leakSentinel);
+        var leakBefore = leakProbe.Verify();
+        RunUnrelatedAllocationAndGc();
+        var leakAfter = leakProbe.Verify();
+        Require(leakBefore.Status == LogLeakVerificationStatus.LeaksDetected && leakAfter.Status == leakBefore.Status && leakAfter.Findings.Count == leakBefore.Findings.Count, "Unrelated allocations or a following GC changed a leak verification result.");
+        Console.WriteLine("PASS resource stability: unrelated-thread allocations and a following GC did not change clean or leak verification results.");
+        Console.WriteLine();
+    }
+
+    private static void RunUnrelatedAllocationAndGc()
+    {
+        Task.Run(() =>
+        {
+            for (var index = 0; index < 256; index++)
+            {
+                var allocation = new byte[16 * 1024];
+                allocation[0] = (byte)index;
+                GC.KeepAlive(allocation);
+            }
+        }).GetAwaiter().GetResult();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
     }
 
     private static string BoundedText(string sentinel, int reserveCharacters = 0)
@@ -675,7 +768,7 @@ internal static class Program
         PrintBenchmarkGate("normalized matching", statistics.MatchingNormalizedWorst, statistics.MatchingNormalizedThreshold, normalizedMatching, "ratio", statistics.HeadroomFraction, matchingPass);
         PrintBenchmarkObservation("sampled heap diagnostic observation", statistics.MemoryNormalizedDiagnosticReference, normalizedMemory);
         var benchmarkPass = emitPass && matchingPass;
-        Console.WriteLine($"benchmark estimator: median of {benchmarkAttempts} same-process product and reference attempts; CPU pass/fail uses the median per-attempt normalized ratio. Capture count and per-event allocation guards remain deterministic resource checks.");
+        Console.WriteLine($"benchmark estimator: median of {benchmarkAttempts} same-process product and reference attempts; CPU pass/fail uses the median per-attempt normalized ratio. Capture count and inspection/finding budgets remain deterministic resource checks.");
         Console.WriteLine($"benchmark verdict: {(benchmarkPass ? "PASS" : "FAIL")} - CPU dimensions must remain within the fixed host-relative thresholds; sampled heap delta is informational across OS/runtime implementations.");
         Require(benchmarkPass, "The benchmark exceeded the fixed CPU acceptance threshold.");
         Console.WriteLine($"PASS benchmark: events={eventCount}, attempts={benchmarkAttempts}, reference-median-ms={referenceElapsed:F2}, emit-median-ms={emitElapsed:F2}, matching-median-ms={matchingElapsed:F2}, median-captured-memory-estimate-bytes={retained}, configured-limit={eventCount}, overflow-behavior=explicit-conservative, disposal=covered.");
@@ -771,17 +864,17 @@ internal static class Program
         Console.WriteLine("Zero sentinel text/bytes in probe-owned diagnostics and simulated output paths: PASS - all four supported leak locations audited in memory and on-disk artifact bytes.");
         Console.WriteLine("Predictable redaction behavior: PASS - redacted text passes; opaque object values are explicitly unsupported and are not serialized.");
         Console.WriteLine("ASP.NET Core setup requires only a few lines: PASS - WebApplicationFactory logging setup is exercised.");
-        Console.WriteLine($"Resource limits: PASS - event capture, {MaximumInspectionUnitsPerEvent} inspection units/event, {MaximumFindingsPerEvent} findings/event, a {MaximumTransientAllocationBytes:N0}-byte transient-allocation guard/event, and {MaximumPayloadCharacters}-character text units are guarded; overflow is explicit inconclusive.");
+        Console.WriteLine($"Resource limits: PASS - 128 sentinels at 4096 characters each by default, event capture, {MaximumInspectionUnitsPerEvent} inspection units/event, {MaximumFindingsPerEvent} findings/event, {MaximumFindingsTotal:N0} total findings, and {MaximumPayloadCharacters}-character text units are guarded; overflow is explicit inconclusive.");
         Console.WriteLine("Supported/excluded field contract: PASS - {OriginalFormat} is excluded metadata and recorded excluded-field fixtures match the classifier output.");
         Console.WriteLine($"Benchmark overhead acceptable: PASS - normalized CPU thresholds derive mechanically from the committed {statistics.SampleCount}-sample reference-relative baseline with {statistics.HeadroomFraction:P0} headroom; raw and normalized measurements are printed above. Sampled heap delta is informational across OS/runtime implementations.");
         Console.WriteLine("Diagnostic coverage: PASS within shipping probe-owned and simulated output paths; the isolated package consumer validates the built package boundary.");
         Console.WriteLine("The shipping coverage corpus is bound to the shipping implementation; no separate probe contract remains.");
     }
 
-    private static LogLeakProbe NewProbe(int maximumEvents, int maximumSentinels = 128, int maximumFindings = MaximumFindingsTotal, int maximumPayloadCharacters = MaximumPayloadCharacters, int maximumInspectionUnitsPerEvent = MaximumInspectionUnitsPerEvent, int maximumFindingsPerEvent = MaximumFindingsPerEvent, long maximumTransientAllocationBytes = MaximumTransientAllocationBytes, LogLeakProbe.ILogLeakTelemetry? telemetry = null)
+    private static LogLeakProbe NewProbe(int maximumEvents, int maximumSentinels = 128, int maximumFindings = MaximumFindingsTotal, int maximumPayloadCharacters = MaximumPayloadCharacters, int maximumInspectionUnitsPerEvent = MaximumInspectionUnitsPerEvent, int maximumFindingsPerEvent = MaximumFindingsPerEvent, LogLeakProbe.ILogLeakTelemetry? telemetry = null)
         => telemetry is null
-            ? new LogLeakProbe(new LogLeakOptions(maximumCapturedEvents: maximumEvents, maximumSentinels: maximumSentinels, maximumFindings: maximumFindings, maximumPayloadCharacters: maximumPayloadCharacters, maximumInspectionUnitsPerEvent: maximumInspectionUnitsPerEvent, maximumFindingsPerEvent: maximumFindingsPerEvent, maximumTransientAllocationBytes: maximumTransientAllocationBytes))
-            : new LogLeakProbe(new LogLeakOptions(maximumCapturedEvents: maximumEvents, maximumSentinels: maximumSentinels, maximumFindings: maximumFindings, maximumPayloadCharacters: maximumPayloadCharacters, maximumInspectionUnitsPerEvent: maximumInspectionUnitsPerEvent, maximumFindingsPerEvent: maximumFindingsPerEvent, maximumTransientAllocationBytes: maximumTransientAllocationBytes), telemetry);
+            ? new LogLeakProbe(new LogLeakOptions(maximumCapturedEvents: maximumEvents, maximumSentinels: maximumSentinels, maximumFindings: maximumFindings, maximumPayloadCharacters: maximumPayloadCharacters, maximumInspectionUnitsPerEvent: maximumInspectionUnitsPerEvent, maximumFindingsPerEvent: maximumFindingsPerEvent))
+            : new LogLeakProbe(new LogLeakOptions(maximumCapturedEvents: maximumEvents, maximumSentinels: maximumSentinels, maximumFindings: maximumFindings, maximumPayloadCharacters: maximumPayloadCharacters, maximumInspectionUnitsPerEvent: maximumInspectionUnitsPerEvent, maximumFindingsPerEvent: maximumFindingsPerEvent), telemetry);
 
     private sealed record BenchmarkMeasurement(double ReferenceMilliseconds, double EmitMilliseconds, double MatchingMilliseconds, long RetainedBytes);
 

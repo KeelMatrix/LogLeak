@@ -55,14 +55,15 @@ The supported boundary is intentionally frozen to:
 - direct string values in structured state, excluding reserved `{OriginalFormat}` metadata;
 - plain string nested scopes;
 - direct string values in templated scopes such as `logger.BeginScope("Authorization {Token}", value)`;
-- direct string values in dictionary or `IReadOnlyDictionary<string, object?>` scopes;
+- direct string values in `IEnumerable<KeyValuePair<string, object?>>` scopes;
+- direct string values in `IEnumerable<KeyValuePair<string, string>>` scopes, including `Dictionary<string, string>`, `IReadOnlyDictionary<string, string>`, and other implementations of those shapes;
 - the string representation of a logging exception.
 
 Matching is exact ordinal literal matching. Non-string scope values and opaque scope objects are excluded; LogLeak does not recursively serialize objects, decode, normalize, hash, encode, or infer unregistered secrets. It does not inspect arbitrary sinks.
 
 ## Bounds and privacy
 
-Capture defaults are bounded to 4,096 UTF-16 characters per text unit, 1,024 inspection units per event, 256 findings per event, 4,096 findings overall, and 4,096 captured events. The transient per-event allocation guard is 1 MiB. A bound breach returns `Inconclusive` and never `Clean`.
+The deterministic resource contract is identical on `net8.0` and `netstandard2.0`: by default, at most 128 sentinels may be registered, each sentinel is at most 4,096 UTF-16 characters, each inspected text unit is at most 4,096 UTF-16 characters, each event may inspect 1,024 units and retain 256 findings, the probe may retain 4,096 findings overall, and 4,096 events may complete inspection. LogLeak does not use a process-wide heap delta or transient-allocation measurement. A bound breach returns `Inconclusive` and never `Clean`.
 
 Only a clean verification requests best-effort activation and weekly heartbeat signals through `KeelMatrix.Telemetry`. Detected leaks and inconclusive captures do not request activation or heartbeat telemetry. LogLeak sends no sentinel, log content, exception text, category, event name, or property value. Core verification requires no network. Set `KEELMATRIX_NO_TELEMETRY=1` to opt out.
 
@@ -72,7 +73,7 @@ LogLeak verifies only the captured `Microsoft.Extensions.Logging` provider bound
 
 ## Scope boundary
 
-Register `probe.Provider` before opening any scopes that the probe should observe. Scopes opened before provider registration are outside the declared observed boundary and may result in a clean verification even when they contain a registered sentinel. Within the observed boundary, only the supported shallow scope forms above are inspected.
+Register `probe.Provider` before opening any scopes that the probe should observe. Scopes opened before provider registration are outside the declared observed boundary and may result in a clean verification even when they contain a registered sentinel. Within the observed boundary, only the supported shallow scope forms above are inspected. A dictionary shape whose value type is neither `string` nor `object` (for example, `Dictionary<string, int>`) is excluded; a sentinel held only in such a value can therefore produce a clean result because that value is outside the supported boundary.
 
 ## Troubleshooting
 

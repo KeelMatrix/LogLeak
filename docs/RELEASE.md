@@ -21,6 +21,8 @@ This repository publishes `KeelMatrix.LogLeak` from an exact semantic-version ta
    pwsh ./build/Invoke-PackageGate.ps1 -Stage All -Version 0.1.0
    ```
 
+   The isolated package consumer targets `net6.0`, which cannot consume the package's `net8.0` asset. The gate proves from `PackageConsumer.deps.json` that `lib/netstandard2.0/KeelMatrix.LogLeak.dll` was selected, then exercises clean, planted-leak, and deterministic-bound-breach paths.
+
 5. Run the contract scenarios, including the repository-controlled tag-version resolver and downstream artifact-name check:
 
    ```powershell

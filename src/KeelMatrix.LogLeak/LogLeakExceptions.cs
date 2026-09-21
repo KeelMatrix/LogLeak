@@ -5,10 +5,16 @@ namespace KeelMatrix.LogLeak;
 /// </summary>
 public sealed class LogLeakConfigurationException : Exception
 {
-    internal LogLeakConfigurationException(string message)
-        : base(message)
+    private readonly IReadOnlyList<string> sentinelValues;
+
+    internal LogLeakConfigurationException(string message, IReadOnlyList<string>? sentinelValues = null)
+        : base(LogLeakDiagnostics.SafeText(message, sentinelValues ?? Array.Empty<string>()))
     {
+        this.sentinelValues = sentinelValues ?? Array.Empty<string>();
     }
+
+    /// <summary>Returns the safe configuration diagnostic.</summary>
+    public override string ToString() => LogLeakDiagnostics.SafeText(Message, sentinelValues);
 }
 
 /// <summary>
@@ -18,11 +24,13 @@ public sealed class LogLeakInconclusiveException : Exception
 {
     internal LogLeakInconclusiveException(
         string reason,
-        IReadOnlyList<LogLeakFinding> findings)
-        : base(CreateMessage(reason))
+        IReadOnlyList<LogLeakFinding> findings,
+        IReadOnlyList<string> sentinelValues)
+        : base(LogLeakDiagnostics.SafeInconclusiveMessage(reason, sentinelValues))
     {
-        Reason = reason;
+        Reason = LogLeakDiagnostics.SafeText(reason, sentinelValues);
         Findings = findings;
+        this.sentinelValues = sentinelValues;
     }
 
     /// <summary>
@@ -35,8 +43,10 @@ public sealed class LogLeakInconclusiveException : Exception
     /// </summary>
     public IReadOnlyList<LogLeakFinding> Findings { get; }
 
-    private static string CreateMessage(string reason)
-        => "LogLeak verification is inconclusive: " + reason;
+    private readonly IReadOnlyList<string> sentinelValues;
+
+    /// <summary>Returns the safe inconclusive-verification diagnostic.</summary>
+    public override string ToString() => LogLeakDiagnostics.SafeText(Message, sentinelValues);
 }
 
 /// <summary>
@@ -44,10 +54,13 @@ public sealed class LogLeakInconclusiveException : Exception
 /// </summary>
 public sealed class LogLeakAssertionException : Exception
 {
-    internal LogLeakAssertionException(IReadOnlyList<LogLeakFinding> findings)
-        : base(CreateMessage(findings))
+    private readonly IReadOnlyList<string> sentinelValues;
+
+    internal LogLeakAssertionException(IReadOnlyList<LogLeakFinding> findings, IReadOnlyList<string> sentinelValues)
+        : base(LogLeakDiagnostics.SafeAssertionMessage(findings, sentinelValues))
     {
         Findings = findings;
+        this.sentinelValues = sentinelValues;
     }
 
     /// <summary>
@@ -55,15 +68,8 @@ public sealed class LogLeakAssertionException : Exception
     /// </summary>
     public IReadOnlyList<LogLeakFinding> Findings { get; }
 
-    private static string CreateMessage(IReadOnlyList<LogLeakFinding> findings)
-    {
-        var lines = findings.Select(static finding => "- " + finding.ToString());
-        return "Registered sentinel values reached the logging event stream ("
-            + findings.Count
-            + " finding(s))."
-            + Environment.NewLine
-            + string.Join(Environment.NewLine, lines);
-    }
+    /// <summary>Returns the safe leak-verification diagnostic.</summary>
+    public override string ToString() => LogLeakDiagnostics.SafeText(Message, sentinelValues);
 }
 
 /// <summary>
@@ -72,7 +78,10 @@ public sealed class LogLeakAssertionException : Exception
 public sealed class LogLeakDisposedException : Exception
 {
     internal LogLeakDisposedException()
-        : base("The LogLeak probe has already been disposed.")
+        : base(string.Empty)
     {
     }
+
+    /// <summary>Returns an empty diagnostic so disposal errors cannot echo registered values.</summary>
+    public override string ToString() => string.Empty;
 }

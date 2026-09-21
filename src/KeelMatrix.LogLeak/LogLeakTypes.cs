@@ -36,6 +36,10 @@ public enum LogLeakVerificationStatus
 /// <summary>
 /// Configures sentinel registration and bounded provider-boundary capture.
 /// </summary>
+/// <remarks>
+/// The limits are deterministic on every supported target framework. LogLeak does not use process-wide heap accounting or
+/// a per-event allocation budget; a capture, payload, inspection-unit, or finding limit breach is inconclusive.
+/// </remarks>
 public sealed class LogLeakOptions
 {
     /// <summary>
@@ -48,7 +52,6 @@ public sealed class LogLeakOptions
     /// <param name="maximumPayloadCharacters">Maximum UTF-16 characters in one inspected text unit.</param>
     /// <param name="maximumInspectionUnitsPerEvent">Maximum formatted, structured-entry, scope, and exception units inspected per event.</param>
     /// <param name="maximumFindingsPerEvent">Maximum findings retained from one event.</param>
-    /// <param name="maximumTransientAllocationBytes">Maximum transient allocation observed while processing one event.</param>
     public LogLeakOptions(
         int maximumCapturedEvents = 4096,
         int maximumSentinels = 128,
@@ -56,8 +59,7 @@ public sealed class LogLeakOptions
         int maximumSentinelCharacters = 4096,
         int maximumPayloadCharacters = 4096,
         int maximumInspectionUnitsPerEvent = 1024,
-        int maximumFindingsPerEvent = 256,
-        long maximumTransientAllocationBytes = 1_048_576)
+        int maximumFindingsPerEvent = 256)
     {
         if (maximumCapturedEvents <= 0
             || maximumSentinels <= 0
@@ -65,8 +67,7 @@ public sealed class LogLeakOptions
             || maximumSentinelCharacters <= 0
             || maximumPayloadCharacters <= 0
             || maximumInspectionUnitsPerEvent <= 0
-            || maximumFindingsPerEvent <= 0
-            || maximumTransientAllocationBytes <= 0)
+            || maximumFindingsPerEvent <= 0)
         {
             throw new LogLeakConfigurationException("Capture limits must be greater than zero.");
         }
@@ -78,7 +79,6 @@ public sealed class LogLeakOptions
         MaximumPayloadCharacters = maximumPayloadCharacters;
         MaximumInspectionUnitsPerEvent = maximumInspectionUnitsPerEvent;
         MaximumFindingsPerEvent = maximumFindingsPerEvent;
-        MaximumTransientAllocationBytes = maximumTransientAllocationBytes;
     }
 
     /// <summary>Gets the maximum number of successfully inspected events.</summary>
@@ -102,8 +102,6 @@ public sealed class LogLeakOptions
     /// <summary>Gets the maximum finding count per event.</summary>
     public int MaximumFindingsPerEvent { get; }
 
-    /// <summary>Gets the maximum transient allocation measured while processing one event.</summary>
-    public long MaximumTransientAllocationBytes { get; }
 }
 
 /// <summary>
@@ -117,7 +115,8 @@ public sealed class LogLeakFinding
         string? categoryName,
         int? eventId,
         string? eventName,
-        string? propertyName)
+        string? propertyName,
+        IReadOnlyList<string> sentinelValues)
     {
         SentinelLabel = sentinelLabel;
         Location = location;
@@ -125,7 +124,10 @@ public sealed class LogLeakFinding
         EventId = eventId;
         EventName = eventName;
         PropertyName = propertyName;
+        this.sentinelValues = sentinelValues;
     }
+
+    private readonly IReadOnlyList<string> sentinelValues;
 
     /// <summary>Gets the safe label supplied when the sentinel was registered.</summary>
     public string SentinelLabel { get; }
@@ -147,31 +149,7 @@ public sealed class LogLeakFinding
 
     /// <summary>Returns a safe diagnostic that never includes the registered sentinel value.</summary>
     public override string ToString()
-    {
-        var result = "Sentinel label '" + SentinelLabel + "' reached " + Location;
-        if (CategoryName is not null)
-        {
-            result += " in category '" + CategoryName + "'";
-        }
-
-        if (EventId is int eventId)
-        {
-            result += " (EventId: " + eventId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            if (EventName is not null)
-            {
-                result += ", Name: '" + EventName + "'";
-            }
-
-            result += ")";
-        }
-
-        if (PropertyName is not null)
-        {
-            result += ". Property: '" + PropertyName + "'";
-        }
-
-        return result + ".";
-    }
+        => LogLeakDiagnostics.SafeFinding(SentinelLabel, Location, CategoryName, EventId, EventName, PropertyName, sentinelValues);
 }
 
 /// <summary>
@@ -183,13 +161,19 @@ public sealed class LogLeakVerificationResult
         LogLeakVerificationStatus status,
         IReadOnlyList<LogLeakFinding> findings,
         int capturedEventCount,
-        string? inconclusiveReason)
+        string? inconclusiveReason,
+        IReadOnlyList<string> sentinelValues)
     {
         Status = status;
         Findings = findings;
         CapturedEventCount = capturedEventCount;
         InconclusiveReason = inconclusiveReason;
+        this.sentinelValues = sentinelValues;
     }
+
+    private readonly IReadOnlyList<string> sentinelValues;
+
+    internal IReadOnlyList<string> SentinelValues => sentinelValues;
 
     /// <summary>Gets the verification status.</summary>
     public LogLeakVerificationStatus Status { get; }
@@ -205,12 +189,5 @@ public sealed class LogLeakVerificationResult
 
     /// <summary>Returns a safe summary that contains no captured log content.</summary>
     public override string ToString()
-        => "LogLeak verification "
-            + Status
-            + " ("
-            + Findings.Count
-            + " finding(s), "
-            + CapturedEventCount
-            + " captured event(s)"
-            + (InconclusiveReason is null ? ")." : ", " + InconclusiveReason + ").");
+        => LogLeakDiagnostics.SafeVerificationResult(Status, Findings.Count, CapturedEventCount, InconclusiveReason, sentinelValues);
 }

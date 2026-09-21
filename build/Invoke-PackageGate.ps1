@@ -396,7 +396,7 @@ function Invoke-Smoke {
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
@@ -424,6 +424,7 @@ function Invoke-Smoke {
     <packageSource key="nuget.org">
       <package pattern="KeelMatrix.Telemetry" />
       <package pattern="Microsoft.AspNetCore.*" />
+      <package pattern="Microsoft.Bcl.*" />
       <package pattern="Microsoft.Extensions.*" />
       <package pattern="Microsoft.WindowsDesktop.*" />
       <package pattern="System.*" />
@@ -475,6 +476,31 @@ using (var plantedFactory = LoggerFactory.Create(builder => builder.AddProvider(
     }
 }
 
+using var boundedProbe = new LogLeakProbe(new LogLeakOptions(maximumCapturedEvents: 1))
+    .AddSecret("B2", "synthetic-consumer-bound-34ef");
+using (var boundedFactory = LoggerFactory.Create(builder => builder.AddProvider(boundedProbe.Provider)))
+{
+    var boundedLogger = boundedFactory.CreateLogger("PackageConsumer");
+    boundedLogger.LogInformation("first bounded event");
+    boundedLogger.LogInformation("second bounded event");
+}
+
+var boundedResult = boundedProbe.Verify();
+if (boundedResult.Status != LogLeakVerificationStatus.Inconclusive
+    || !boundedResult.InconclusiveReason!.Contains("capture event budget", StringComparison.Ordinal))
+{
+    throw new InvalidOperationException("The netstandard2.0 package asset did not fail closed on a deterministic capture bound breach.");
+}
+
+try
+{
+    boundedProbe.AssertNoLeaks();
+    throw new InvalidOperationException("The netstandard2.0 package asset did not throw for a deterministic capture bound breach.");
+}
+catch (LogLeakInconclusiveException exception) when (!exception.ToString().Contains("synthetic-consumer-bound-34ef", StringComparison.Ordinal))
+{
+}
+
 Console.WriteLine("Package consumer smoke passed.");
 '@ | Set-Content -LiteralPath $consumerProgram -Encoding utf8NoBOM
 
@@ -501,6 +527,19 @@ Console.WriteLine("Package consumer smoke passed.");
         KEELMATRIX_NO_TELEMETRY = '1'
         DOTNET_CLI_TELEMETRY_OPTOUT = '1'
     }
+
+    $depsPath = Join-Path $smokeRoot 'bin/Release/net6.0/PackageConsumer.deps.json'
+    if (-not (Test-Path -LiteralPath $depsPath)) {
+        throw "The net6.0 package consumer did not produce '$depsPath'."
+    }
+    $depsText = Get-Content -LiteralPath $depsPath -Raw
+    if ($depsText -notmatch 'lib/netstandard2\.0/KeelMatrix\.LogLeak\.dll') {
+        throw 'The net6.0 package consumer deps.json did not resolve lib/netstandard2.0/KeelMatrix.LogLeak.dll.'
+    }
+    if ($depsText -match 'lib/net8\.0/KeelMatrix\.LogLeak\.dll') {
+        throw 'The net6.0 package consumer deps.json unexpectedly resolved the net8.0 LogLeak asset.'
+    }
+    Write-Host 'Consumer asset proof: net6.0 PackageConsumer.deps.json resolves lib/netstandard2.0/KeelMatrix.LogLeak.dll.'
 }
 
 switch ($Stage) {

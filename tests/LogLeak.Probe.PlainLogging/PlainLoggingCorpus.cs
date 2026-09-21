@@ -25,23 +25,61 @@ internal static class PlainLoggingCorpus
         logger.LogInformation("nested scope event");
     }
 
+    public static void StringDictionaryScopes(ILogger logger, string sentinel)
+    {
+        using var dictionaryScope = logger.BeginScope(new Dictionary<string, string>
+        {
+            ["Authorization"] = sentinel
+        });
+        IReadOnlyDictionary<string, string> readOnlyDictionary = new Dictionary<string, string>
+        {
+            ["Classification"] = sentinel
+        };
+        using var readOnlyDictionaryScope = logger.BeginScope(readOnlyDictionary);
+        logger.LogInformation("string-valued dictionary scopes event");
+    }
+
+    public static void NonStringDictionaryScope(ILogger logger, string sentinel)
+    {
+        using var scope = logger.BeginScope(new Dictionary<string, OpaqueClassifiedValue>
+        {
+            ["Authorization"] = new OpaqueClassifiedValue(sentinel)
+        });
+        logger.LogInformation("non-string dictionary scope event");
+    }
+
     public static void Exception(ILogger logger, string sentinel)
     {
         var exception = new InvalidOperationException($"exception representation {sentinel}");
         logger.LogError(exception, "exception event");
     }
 
-    public static void Redacted(ILogger logger, string sentinel)
+    public static RedactionEvidence Redacted(ILogger logger, string sentinel, bool redactionEnabled)
     {
-        var classified = new OpaqueClassifiedValue(sentinel);
-        var redacted = "[REDACTED]";
-        logger.LogInformation("redacted value {Value}", redacted);
+        var classified = Classify(sentinel);
+        var formattedValue = redactionEnabled ? Redact(classified, "formatted") : classified.RawValue;
+        var structuredValue = redactionEnabled ? Redact(classified, "structured") : classified.RawValue;
+        logger.LogInformation("redacted value {Value}", formattedValue);
         var state = new[]
         {
+            new KeyValuePair<string, object?>("ClassifiedValue", structuredValue),
             new KeyValuePair<string, object?>("OpaqueClassifiedValue", classified)
         };
 
         logger.Log(LogLevel.Information, new EventId(206, "classification"), state, null, static (_, _) => "classified state event");
+        return new RedactionEvidence(classified.IsClassified, formattedValue, structuredValue, redactionEnabled);
+    }
+
+    private static ClassifiedValue Classify(string value) => new(value, true);
+
+    private static string Redact(ClassifiedValue value, string field)
+        => "<" + field + "-classified-" + value.RawValue.Length + ">";
+
+    internal sealed record RedactionEvidence(bool WasClassified, string FormattedValue, string StructuredValue, bool RedactionEnabled);
+
+    private sealed record ClassifiedValue(string RawValue, bool IsClassified)
+    {
+        public override string ToString() => "[CLASSIFIED]";
     }
 
     internal sealed class OpaqueClassifiedValue

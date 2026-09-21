@@ -92,6 +92,79 @@ public sealed partial class LogLeakProbeTests
     }
 
     [Fact]
+    public void Detects_string_valued_dictionary_scope_shapes()
+    {
+        const string dictionarySentinel = "synthetic-string-dictionary-scope-1a2b";
+        const string readOnlyDictionarySentinel = "synthetic-readonly-dictionary-scope-3c4d";
+        using var probe = new LogLeakProbe()
+            .AddSecret("A1", dictionarySentinel)
+            .AddSecret("B2", readOnlyDictionarySentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("PaymentClient");
+        IReadOnlyDictionary<string, string> readOnlyDictionary = new Dictionary<string, string>
+        {
+            ["Authorization"] = readOnlyDictionarySentinel
+        };
+
+        using (logger.BeginScope(new Dictionary<string, string>
+        {
+            ["Authorization"] = dictionarySentinel
+        }))
+        using (logger.BeginScope(readOnlyDictionary))
+        {
+            logger.LogInformation("dictionary scope event");
+        }
+
+        var findings = probe.Verify().Findings.Where(finding => finding.Location == LogLeakLocation.Scope).ToArray();
+
+        Assert.Equal(2, findings.Length);
+        Assert.Contains(findings, finding => finding.SentinelLabel == "A1");
+        Assert.Contains(findings, finding => finding.SentinelLabel == "B2");
+    }
+
+    [Fact]
+    public void String_valued_dictionary_scope_without_registered_sentinel_is_clean()
+    {
+        using var probe = new LogLeakProbe().AddSecret("A1", "synthetic-absent-dictionary-scope-5e6f");
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("PaymentClient");
+        IReadOnlyDictionary<string, string> readOnlyDictionary = new Dictionary<string, string>
+        {
+            ["Authorization"] = "ordinary-readonly-value"
+        };
+
+        using (logger.BeginScope(new Dictionary<string, string>
+        {
+            ["Authorization"] = "ordinary-dictionary-value"
+        }))
+        using (logger.BeginScope(readOnlyDictionary))
+        {
+            logger.LogInformation("dictionary scope event");
+        }
+
+        Assert.Equal(LogLeakVerificationStatus.Clean, probe.Verify().Status);
+    }
+
+    [Fact]
+    public void Non_string_dictionary_scope_values_remain_excluded()
+    {
+        const string sentinel = "synthetic-non-string-dictionary-scope-7a8b";
+        using var probe = new LogLeakProbe().AddSecret("A1", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("PaymentClient");
+
+        using (logger.BeginScope(new Dictionary<string, OpaqueScope>
+        {
+            ["Authorization"] = new OpaqueScope(sentinel)
+        }))
+        {
+            logger.LogInformation("dictionary scope event");
+        }
+
+        Assert.Equal(LogLeakVerificationStatus.Clean, probe.Verify().Status);
+    }
+
+    [Fact]
     public void Excludes_opaque_scope_objects_instead_of_recursively_serializing_them()
     {
         const string sentinel = "synthetic-opaque-scope-8d2f";
@@ -250,6 +323,88 @@ public sealed partial class LogLeakProbeTests
 
         var assertion = Assert.Throws<LogLeakAssertionException>(() => probe.AssertNoLeaks());
         Assert.DoesNotContain(sentinel, assertion.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Completed_diagnostics_guard_separator_and_quote_composition()
+    {
+        const string sentinel = "prefix' (EventId: 42)";
+        using var probe = new LogLeakProbe().AddSecret("credential", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("prefix");
+
+        logger.Log(LogLevel.Warning, new EventId(42), sentinel, null, static (state, _) => state);
+
+        var result = probe.Verify();
+        var finding = Assert.Single(result.Findings);
+        var assertion = Assert.Throws<LogLeakAssertionException>(() => probe.AssertNoLeaks());
+
+        Assert.DoesNotContain(sentinel, finding.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(sentinel, result.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(sentinel, assertion.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(sentinel, assertion.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Completed_diagnostics_guard_event_name_property_and_fixed_fallback()
+    {
+        const string composedSentinel = "category' (EventId: 7, Name: 'event'). Property: 'token";
+        using var probe = new LogLeakProbe().AddSecret("metadata", composedSentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("category");
+        var state = new[]
+        {
+            new KeyValuePair<string, object?>("token", composedSentinel)
+        };
+
+        logger.Log(LogLevel.Warning, new EventId(7, "event"), state, null, static (_, _) => "safe");
+
+        var result = probe.Verify();
+        var finding = Assert.Single(result.Findings);
+        var assertion = Assert.Throws<LogLeakAssertionException>(() => probe.AssertNoLeaks());
+        Assert.DoesNotContain(composedSentinel, finding.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(composedSentinel, result.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(composedSentinel, assertion.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(composedSentinel, assertion.ToString(), StringComparison.Ordinal);
+
+        const string fallbackSentinel = "Sentinel label '";
+        using var fallbackProbe = new LogLeakProbe().AddSecret("fallback", fallbackSentinel);
+        using var fallbackFactory = CreateLoggerFactory(fallbackProbe);
+        fallbackFactory.CreateLogger("FallbackTests").LogInformation(fallbackSentinel);
+        var fallbackFinding = Assert.Single(fallbackProbe.Verify().Findings);
+        Assert.Equal(string.Empty, fallbackFinding.ToString());
+        Assert.DoesNotContain(fallbackSentinel, fallbackFinding.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Completed_diagnostics_guard_numeric_limit_and_configuration_composition()
+    {
+        const string numericSentinel = "42";
+        using var probe = new LogLeakProbe(new LogLeakOptions(maximumCapturedEvents: 42))
+            .AddSecret("numeric-limit", numericSentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("LimitTests");
+        for (var index = 0; index <= 42; index++)
+        {
+            logger.LogInformation("safe event");
+        }
+
+        var result = probe.Verify();
+        var inconclusive = Assert.Throws<LogLeakInconclusiveException>(() => probe.AssertNoLeaks());
+
+        Assert.DoesNotContain(numericSentinel, result.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(numericSentinel, result.InconclusiveReason ?? string.Empty, StringComparison.Ordinal);
+        Assert.DoesNotContain(numericSentinel, inconclusive.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain(numericSentinel, inconclusive.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(numericSentinel, inconclusive.ToString(), StringComparison.Ordinal);
+
+        const string configurationSentinel = "Sentinel labels must be unique.";
+        using var configurationProbe = new LogLeakProbe().AddSecret("configuration", configurationSentinel);
+        var configurationFailure = Assert.Throws<LogLeakConfigurationException>(() =>
+            configurationProbe.AddSecret("configuration", "safe-second-value-9c0d"));
+
+        Assert.DoesNotContain(configurationSentinel, configurationFailure.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(configurationSentinel, configurationFailure.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -579,6 +734,57 @@ public sealed partial class LogLeakProbeTests
 
         probe.Dispose();
         Assert.Throws<LogLeakDisposedException>(() => probe.Verify());
+    }
+
+    [Fact]
+    public async Task Unrelated_thread_allocations_and_following_gc_do_not_change_verification_result()
+    {
+        using var cleanProbe = new LogLeakProbe().AddSecret("A1", "synthetic-unrelated-thread-clean-a1b2");
+        using var cleanFactory = CreateLoggerFactory(cleanProbe);
+        cleanFactory.CreateLogger("ResourceStabilityTests").LogInformation("safe event");
+        var cleanBefore = cleanProbe.Verify();
+
+        await Task.Run(() =>
+        {
+            for (var index = 0; index < 256; index++)
+            {
+                var allocation = new byte[16 * 1024];
+                allocation[0] = (byte)index;
+                GC.KeepAlive(allocation);
+            }
+        });
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        var cleanAfter = cleanProbe.Verify();
+        Assert.Equal(cleanBefore.Status, cleanAfter.Status);
+        Assert.Equal(cleanBefore.CapturedEventCount, cleanAfter.CapturedEventCount);
+        Assert.Equal(cleanBefore.Findings.Count, cleanAfter.Findings.Count);
+
+        const string leakSentinel = "synthetic-unrelated-thread-leak-c3d4";
+        using var leakProbe = new LogLeakProbe().AddSecret("B2", leakSentinel);
+        using var leakFactory = CreateLoggerFactory(leakProbe);
+        leakFactory.CreateLogger("ResourceStabilityTests").LogInformation(leakSentinel);
+        var leakBefore = leakProbe.Verify();
+
+        await Task.Run(() =>
+        {
+            for (var index = 0; index < 256; index++)
+            {
+                var allocation = new byte[16 * 1024];
+                allocation[0] = (byte)index;
+                GC.KeepAlive(allocation);
+            }
+        });
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        var leakAfter = leakProbe.Verify();
+        Assert.Equal(leakBefore.Status, leakAfter.Status);
+        Assert.Equal(leakBefore.CapturedEventCount, leakAfter.CapturedEventCount);
+        Assert.Equal(leakBefore.Findings.Count, leakAfter.Findings.Count);
     }
 
     private static ILoggerFactory CreateLoggerFactory(LogLeakProbe probe)

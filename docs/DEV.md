@@ -36,7 +36,7 @@ pwsh ./build/Invoke-PackageGate.ps1 -Stage Smoke
 pwsh ./build/Invoke-PackageGate.ps1 -Stage All
 ```
 
-The consumer smoke restores `KeelMatrix.LogLeak` only from the just-built local package. Its package cache, HTTP cache, CLI home, and project directory are fresh for each run. It exercises one clean first-success path and one planted leak, and rejects any assertion diagnostic containing the planted value.
+The consumer smoke restores `KeelMatrix.LogLeak` only from the just-built local package. Its package cache, HTTP cache, CLI home, and project directory are fresh for each run. The isolated consumer targets `net6.0`, so NuGet must resolve the package's `netstandard2.0` assembly; the gate proves that from the generated `PackageConsumer.deps.json`. It exercises a clean path, a planted leak, and a deterministic capture-bound breach that fails explicitly as `Inconclusive`.
 
 ## Formatting and analysis
 

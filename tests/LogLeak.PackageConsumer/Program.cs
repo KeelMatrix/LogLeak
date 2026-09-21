@@ -22,6 +22,31 @@ using (var plantedFactory = LoggerFactory.Create(builder => builder.AddProvider(
     }
 }
 
+using var boundedProbe = new LogLeakProbe(new LogLeakOptions(maximumCapturedEvents: 1))
+    .AddSecret("B2", "synthetic-consumer-bound-34ef");
+using (var boundedFactory = LoggerFactory.Create(builder => builder.AddProvider(boundedProbe.Provider)))
+{
+    var boundedLogger = boundedFactory.CreateLogger("PackageConsumer");
+    boundedLogger.LogInformation("first bounded event");
+    boundedLogger.LogInformation("second bounded event");
+}
+
+var boundedResult = boundedProbe.Verify();
+if (boundedResult.Status != LogLeakVerificationStatus.Inconclusive
+    || !boundedResult.InconclusiveReason!.Contains("capture event budget", StringComparison.Ordinal))
+{
+    throw new InvalidOperationException("The netstandard2.0 package asset did not fail closed on a deterministic capture bound breach.");
+}
+
+try
+{
+    boundedProbe.AssertNoLeaks();
+    throw new InvalidOperationException("The netstandard2.0 package asset did not throw for a deterministic capture bound breach.");
+}
+catch (LogLeakInconclusiveException exception) when (!exception.ToString().Contains("synthetic-consumer-bound-34ef", StringComparison.Ordinal))
+{
+}
+
 Console.WriteLine("Package consumer smoke passed.");
 
 static string AssertLeak(LogLeakProbe probe)

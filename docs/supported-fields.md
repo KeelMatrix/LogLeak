@@ -7,12 +7,13 @@ KeelMatrix.LogLeak verifies registered sentinel values at the `Microsoft.Extensi
 3. Direct string values in nested logging scopes:
    - plain string scopes;
    - templated scopes such as `logger.BeginScope("Authorization {Token}", value)`;
-   - dictionary or `IReadOnlyDictionary<string, object?>` scopes.
+   - `IEnumerable<KeyValuePair<string, object?>>` scopes, including direct string values in `Dictionary<string, object?>` and `IReadOnlyDictionary<string, object?>` implementations;
+   - `IEnumerable<KeyValuePair<string, string>>` scopes, including `Dictionary<string, string>`, `IReadOnlyDictionary<string, string>`, and other implementations of those shapes.
 4. The string representation of an exception supplied to a logging call.
 
 The `{OriginalFormat}` state entry is reserved framework metadata. It is not classified as a structured property. A sentinel in the rendered message is still classified as a formatted-message finding.
 
-Matching is exact ordinal literal matching. The verifier does not perform case folding, URL decoding, Base64 expansion, hashing, alternate encodings, entropy scanning, or arbitrary object serialization. Values of non-string structured properties and non-string scope entries are not inspected. Opaque scope objects are excluded rather than serialized recursively.
+Matching is exact ordinal literal matching. The verifier does not perform case folding, URL decoding, Base64 expansion, hashing, alternate encodings, entropy scanning, or arbitrary object serialization. In the `object?` dictionary shape, only values whose runtime value is a direct `string` are inspected. A dictionary shape whose generic value type is neither `string` nor `object?` (for example, `Dictionary<string, int>`) is excluded entirely; a sentinel held only in such a value can therefore produce a clean result. Opaque scope objects are excluded rather than serialized recursively.
 
 Findings contain only the safe registration label, broad location, and metadata that does not contain a registered sentinel. They never contain sentinel values, full messages, exception payloads, or surrounding state.
 
