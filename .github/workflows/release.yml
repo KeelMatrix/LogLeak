@@ -55,7 +55,9 @@ jobs:
       - name: Set up .NET SDK
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: |
+            10.0.x
+            6.0.x
 
       - name: Validate release contract
         shell: pwsh
