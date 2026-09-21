@@ -36,12 +36,12 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Set up .NET SDK and consumer runtime
+      - name: Set up .NET SDK and required runtimes
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             10.0.x
-            6.0.x
+            8.0.x
 
       - name: Run repository package gate
         shell: pwsh

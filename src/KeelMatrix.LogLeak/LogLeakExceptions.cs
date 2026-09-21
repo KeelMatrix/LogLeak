@@ -22,11 +22,13 @@ public sealed class LogLeakInconclusiveException : Exception
     internal LogLeakInconclusiveException(
         string reason,
         IReadOnlyList<LogLeakFinding> findings,
-        string diagnostic)
+        string diagnostic,
+        bool occurredDuringCapture)
         : base(diagnostic)
     {
         Reason = reason;
         Findings = findings;
+        OccurredDuringCapture = occurredDuringCapture;
     }
 
     /// <summary>
@@ -38,6 +40,8 @@ public sealed class LogLeakInconclusiveException : Exception
     /// Gets safe findings observed before the inconclusive condition.
     /// </summary>
     public IReadOnlyList<LogLeakFinding> Findings { get; }
+
+    internal bool OccurredDuringCapture { get; }
 
     /// <summary>Returns the safe inconclusive-verification diagnostic.</summary>
     public override string ToString() => Message;

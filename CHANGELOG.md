@@ -14,3 +14,6 @@ All notable changes to this project are documented here.
 - Explicit inconclusive outcomes for capture and resource-bound overflow.
 - Same-probe reentrant provider-boundary capture is rejected without budget mutation and makes later verification inconclusive.
 - Escaped findings, results, and diagnostic exceptions retain only precomputed safe text and metadata.
+- Scope handles and provider-boundary argument failures remain sentinel-safe, including their `ToString()` representations.
+- Verification attempted during an active formatter, exception, state, or scope callback is explicitly inconclusive without success telemetry.
+- Consumer documentation and package smoke cover source-generated `LoggerMessage` usage.

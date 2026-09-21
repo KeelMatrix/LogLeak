@@ -1,5 +1,25 @@
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Loader;
 using KeelMatrix.LogLeak;
 using Microsoft.Extensions.Logging;
+
+var netstandardAsset = PackageAssetLoader.AssetPath;
+if (!File.Exists(netstandardAsset))
+{
+    throw new InvalidOperationException($"The packaged netstandard2.0 asset was not copied to '{netstandardAsset}'.");
+}
+
+var loadedLogLeakAssembly = typeof(LogLeakProbe).Assembly;
+Console.WriteLine($"Consumer runtime: {RuntimeInformation.FrameworkDescription}");
+Console.WriteLine($"LogLeak asset: {loadedLogLeakAssembly.Location}");
+if (!string.Equals(
+        Path.GetFullPath(loadedLogLeakAssembly.Location),
+        Path.GetFullPath(netstandardAsset),
+        StringComparison.OrdinalIgnoreCase))
+{
+    throw new InvalidOperationException("The package consumer did not execute the packaged netstandard2.0 LogLeak asset.");
+}
 
 using var cleanProbe = new LogLeakProbe()
     .AddSecret("probe-pass", "synthetic-consumer-secret-12ab");
@@ -26,6 +46,114 @@ if (stateResult.Status != LogLeakVerificationStatus.LeaksDetected
     || !stateResult.Findings.Any(finding => finding.Location == LogLeakLocation.StructuredProperty))
 {
     throw new InvalidOperationException("The netstandard2.0 package asset did not inspect string-valued dictionary state.");
+}
+
+const string generatedSentinel = "synthetic-consumer-generated-67ab";
+using var generatedProbe = new LogLeakProbe().AddSecret("G", generatedSentinel);
+using (var generatedFactory = LoggerFactory.Create(builder => builder.AddProvider(generatedProbe.Provider)))
+{
+    GeneratedLogging.Write(generatedFactory.CreateLogger("PackageConsumer"), generatedSentinel);
+}
+
+var generatedResult = generatedProbe.Verify();
+if (generatedResult.Status != LogLeakVerificationStatus.LeaksDetected
+    || !generatedResult.Findings.Any(finding => finding.Location == LogLeakLocation.FormattedMessage))
+{
+    throw new InvalidOperationException("The packaged source-generated LoggerMessage path was not verified.");
+}
+
+const string scopeSentinel = "synthetic-consumer-scope-handle-78bc";
+using var scopeProbe = new LogLeakProbe().AddSecret("H", scopeSentinel);
+var scopeLogger = scopeProbe.Provider.CreateLogger("PackageConsumer");
+var scopeHandle = scopeLogger.BeginScope(scopeSentinel);
+if (scopeHandle is null)
+{
+    throw new InvalidOperationException("The package consumer scope handle was null.");
+}
+
+if ((scopeHandle.ToString() ?? string.Empty).Contains(scopeSentinel, StringComparison.Ordinal))
+{
+    throw new InvalidOperationException("The package consumer scope handle exposed the registered sentinel.");
+}
+
+scopeLogger.LogInformation("event inside scope");
+scopeHandle.Dispose();
+scopeLogger.LogInformation("event after scope");
+if (scopeProbe.Verify().Findings.Count != 1)
+{
+    throw new InvalidOperationException("The package consumer scope handle did not preserve disposal behavior.");
+}
+
+AssertProviderArgumentIsSafe("categoryName", provider => provider.CreateLogger(null!));
+AssertProviderArgumentIsSafe("formatter", provider => provider.CreateLogger("PackageConsumer").Log<string>(LogLevel.Information, default, "safe", null, null!));
+AssertProviderArgumentIsSafe("newScopeProvider", provider => ((ISupportExternalScope)provider).SetScopeProvider(null!));
+
+const string duringCaptureSentinel = "synthetic-consumer-during-capture-89cd";
+using var duringCaptureProbe = new LogLeakProbe().AddSecret("I", duringCaptureSentinel);
+using (var duringCaptureFactory = LoggerFactory.Create(builder => builder.AddProvider(duringCaptureProbe.Provider)))
+{
+    LogLeakVerificationResult? nested = null;
+    var duringCaptureLogger = duringCaptureFactory.CreateLogger("PackageConsumer");
+    duringCaptureLogger.Log(LogLevel.Information, default, duringCaptureSentinel, null, (state, _) =>
+    {
+        nested = duringCaptureProbe.Verify();
+        return state;
+    });
+
+    if (nested?.Status != LogLeakVerificationStatus.Inconclusive)
+    {
+        throw new InvalidOperationException("Verification during an active formatter callback was not rejected.");
+    }
+}
+
+if (duringCaptureProbe.Verify().Status != LogLeakVerificationStatus.LeaksDetected)
+{
+    throw new InvalidOperationException("The outer package consumer verification did not preserve its finding.");
+}
+
+const string exceptionSentinel = "synthetic-consumer-exception-capture-9ade";
+using var exceptionProbe = new LogLeakProbe().AddSecret("K", exceptionSentinel);
+var exceptionCallback = new DuringCaptureException(exceptionProbe, exceptionSentinel);
+using (var exceptionFactory = LoggerFactory.Create(builder => builder.AddProvider(exceptionProbe.Provider)))
+{
+    exceptionFactory.CreateLogger("PackageConsumer").LogError(exceptionCallback, "safe exception event");
+}
+
+if (exceptionCallback.DuringCapture?.Status != LogLeakVerificationStatus.Inconclusive
+    || !exceptionProbe.Verify().Findings.Any(finding => finding.Location == LogLeakLocation.ExceptionRepresentation))
+{
+    throw new InvalidOperationException("Verification during exception representation capture was not rejected.");
+}
+
+const string callbackStateSentinel = "synthetic-consumer-state-capture-abcf";
+const string callbackScopeSentinel = "synthetic-consumer-scope-capture-def0";
+using var callbackProbe = new LogLeakProbe()
+    .AddSecret("L", callbackStateSentinel)
+    .AddSecret("N", callbackScopeSentinel);
+var callbackState = new DuringCaptureEntries(callbackProbe, "Authorization", callbackStateSentinel);
+using (var callbackFactory = LoggerFactory.Create(builder => builder.AddProvider(callbackProbe.Provider)))
+{
+    var callbackLogger = callbackFactory.CreateLogger("PackageConsumer");
+    callbackLogger.Log(LogLevel.Information, default, callbackState, null, static (_, _) => "safe state event");
+    var callbackScope = new DuringCaptureEntries(callbackProbe, "ScopeToken", callbackScopeSentinel);
+    using (callbackLogger.BeginScope(callbackScope))
+    {
+        callbackLogger.LogInformation("safe scope event");
+    }
+
+    if (callbackState.DuringCapture?.Status != LogLeakVerificationStatus.Inconclusive
+        || callbackScope.DuringCapture?.Status != LogLeakVerificationStatus.Inconclusive)
+    {
+        throw new InvalidOperationException("Verification during state or scope enumeration was not rejected.");
+    }
+}
+
+var callbackResult = callbackProbe.Verify();
+if (callbackResult.Status != LogLeakVerificationStatus.LeaksDetected
+    || !callbackResult.Findings.Any(finding => finding.Location == LogLeakLocation.StructuredProperty)
+    || !callbackResult.Findings.Any(finding => finding.Location == LogLeakLocation.Scope))
+{
+    throw new InvalidOperationException("The package consumer callback findings were not preserved.");
 }
 
 const string reentrantSentinel = "synthetic-consumer-reentrant-45ef";
@@ -93,6 +221,17 @@ catch (LogLeakInconclusiveException exception) when (!exception.ToString().Conta
 
 Console.WriteLine("Package consumer smoke passed.");
 
+static void AssertProviderArgumentIsSafe(string sentinel, Action<ILoggerProvider> action)
+{
+    using var probe = new LogLeakProbe().AddSecret("J", sentinel);
+    var exception = AssertThrows<ArgumentNullException>(() => action(probe.Provider));
+    if (exception.Message.Contains(sentinel, StringComparison.Ordinal)
+        || exception.ToString().Contains(sentinel, StringComparison.Ordinal))
+    {
+        throw new InvalidOperationException("A provider argument diagnostic contained the registered sentinel.");
+    }
+}
+
 static string AssertLeak(LogLeakProbe probe)
 {
     try
@@ -104,4 +243,86 @@ static string AssertLeak(LogLeakProbe probe)
     {
         return exception.ToString();
     }
+}
+
+static TException AssertThrows<TException>(Action action)
+    where TException : Exception
+{
+    try
+    {
+        action();
+    }
+    catch (TException exception)
+    {
+        return exception;
+    }
+
+    throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
+}
+
+internal static partial class GeneratedLogging
+{
+    [LoggerMessage(EventId = 21, Level = LogLevel.Warning, Message = "generated package value {Value}")]
+    internal static partial void Write(ILogger logger, string value);
+}
+
+internal static class PackageAssetLoader
+{
+    internal static readonly string AssetPath = Path.Combine(AppContext.BaseDirectory, "consumer-assets", "netstandard2.0", "KeelMatrix.LogLeak.dll");
+
+    [ModuleInitializer]
+    internal static void Register()
+    {
+        AssemblyLoadContext.Default.Resolving += (_, assemblyName) =>
+            string.Equals(assemblyName.Name, "KeelMatrix.LogLeak", StringComparison.Ordinal)
+                && File.Exists(AssetPath)
+                ? AssemblyLoadContext.Default.LoadFromAssemblyPath(AssetPath)
+                : null;
+    }
+}
+
+internal sealed class DuringCaptureException : Exception
+{
+    private readonly LogLeakProbe probe;
+    private readonly string representation;
+
+    internal DuringCaptureException(LogLeakProbe probe, string representation)
+        : base("safe exception")
+    {
+        this.probe = probe;
+        this.representation = representation;
+    }
+
+    internal LogLeakVerificationResult? DuringCapture { get; private set; }
+
+    public override string ToString()
+    {
+        DuringCapture = probe.Verify();
+        return representation;
+    }
+}
+
+internal sealed class DuringCaptureEntries : IEnumerable<KeyValuePair<string, object?>>
+{
+    private readonly LogLeakProbe probe;
+    private readonly string key;
+    private readonly string value;
+
+    internal DuringCaptureEntries(LogLeakProbe probe, string key, string value)
+    {
+        this.probe = probe;
+        this.key = key;
+        this.value = value;
+    }
+
+    internal LogLeakVerificationResult? DuringCapture { get; private set; }
+
+    public IEnumerator<KeyValuePair<string, object?>> GetEnumerator()
+    {
+        DuringCapture = probe.Verify();
+        yield return new KeyValuePair<string, object?>(key, value);
+    }
+
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+        => GetEnumerator();
 }

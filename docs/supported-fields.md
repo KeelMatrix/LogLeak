@@ -30,6 +30,8 @@ Only a clean verification requests best-effort activation and heartbeat telemetr
 
 If a formatter or exception representation synchronously logs through the same probe, the nested capture is rejected without capture or budget mutation. The probe records a sticky safe reentrancy condition, so every later verification is `Inconclusive`, never `Clean`.
 
+A verification requested from an active formatter, exception-representation, state-enumeration, or scope-enumeration callback is itself `Inconclusive` and does not request success telemetry. Scope handles returned by `BeginScope` are opaque to callers; disposing one still removes the corresponding observed scope.
+
 ## Scope boundary
 
 Register the capture provider before opening scopes that the probe should observe. Scopes opened before provider registration are outside the declared observed boundary and may result in a clean verification even when they contain a registered sentinel. This is a limitation of the provider-registration boundary, not proof that the earlier scope was safe.

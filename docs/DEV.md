@@ -5,7 +5,7 @@ This guide covers local validation for the LogLeak repository. It does not chang
 ## Prerequisites
 
 - PowerShell 7 (`pwsh`).
-- The .NET SDK selected by `global.json` (`10.0.401`).
+- The .NET SDK selected by `global.json` (`10.0.401`) and the supported .NET 8 runtime used by the executable tests and package consumer.
 - Network access to the public NuGet feed for a clean restore and the isolated consumer.
 
 Check the toolchain from the repository root:
@@ -36,9 +36,9 @@ pwsh ./build/Invoke-PackageGate.ps1 -Stage Smoke
 pwsh ./build/Invoke-PackageGate.ps1 -Stage All
 ```
 
-The consumer smoke restores `KeelMatrix.LogLeak` only from the just-built local package. Its package cache, HTTP cache, CLI home, and project directory are fresh for each run. The isolated consumer targets `net6.0`, so NuGet must resolve the package's `netstandard2.0` assembly; the gate proves that from the generated `PackageConsumer.deps.json`. It exercises clean, planted-leak, string-valued dictionary-state, same-probe reentrancy, and deterministic capture-bound paths; unsafe or bounded paths fail explicitly as `Inconclusive`.
+The consumer smoke restores `KeelMatrix.LogLeak` only from the just-built local package. Its package cache, HTTP cache, CLI home, and project directory are fresh for each run. The isolated consumer runs on the supported `net8.0` runtime and explicitly references the package's `lib/netstandard2.0/KeelMatrix.LogLeak.dll` asset from the restored package. Its own runtime output prints and checks the loaded assembly path. It exercises clean, planted-leak, source-generated logging, sentinel-safe scope/argument boundaries, verification during formatter and exception callbacks, string-valued dictionary-state, same-probe reentrancy, and deterministic capture-bound paths; unsafe or bounded paths fail explicitly as `Inconclusive`.
 
-The release package job is extracted to `.github/workflows/package-gate.yml`. It installs both the `10.0.x` SDK and the `6.0.x` SDK/runtime required by the framework-dependent consumer, then runs the exact package gate. CI calls this reusable workflow with artifact upload disabled, providing a non-publishing release-package-job path; the workflow is also manually dispatchable with a package version for the same smoke.
+The release package job is extracted to `.github/workflows/package-gate.yml`. It installs the `10.0.x` SDK and the supported `8.0.x` SDK/runtime required by the `net8.0` test corpus and package consumer, then runs the exact package gate. CI calls this reusable workflow with artifact upload disabled, providing a non-publishing release-package-job path; the workflow is also manually dispatchable with a package version for the same smoke.
 
 ## Formatting and analysis
 

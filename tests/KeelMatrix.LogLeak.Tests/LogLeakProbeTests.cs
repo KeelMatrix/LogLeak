@@ -69,6 +69,142 @@ public sealed partial class LogLeakProbeTests
     }
 
     [Fact]
+    public void Scope_handle_is_sentinel_safe_and_disposes_the_underlying_scope()
+    {
+        const string sentinel = "synthetic-scope-handle-1a2b";
+        using var probe = new LogLeakProbe().AddSecret("M", sentinel);
+        var logger = probe.Provider.CreateLogger("ScopeHandleTests");
+
+        var scope = logger.BeginScope(sentinel);
+        Assert.DoesNotContain(sentinel, scope!.ToString(), StringComparison.Ordinal);
+        logger.LogInformation("event inside scope");
+        scope.Dispose();
+        logger.LogInformation("event after scope");
+
+        var findings = probe.Verify().Findings;
+        Assert.Single(findings);
+        Assert.Equal(LogLeakLocation.Scope, findings[0].Location);
+    }
+
+    [Fact]
+    public void Provider_boundary_argument_failures_are_sentinel_safe_in_message_and_to_string()
+    {
+        AssertProviderArgumentFailureIsSafe("categoryName", provider => provider.CreateLogger(null!));
+        AssertProviderArgumentFailureIsSafe(
+            "formatter",
+            provider => provider.CreateLogger("ArgumentTests").Log<string>(LogLevel.Information, default, "safe", null, null!));
+        AssertProviderArgumentFailureIsSafe(
+            "newScopeProvider",
+            provider => ((ISupportExternalScope)provider).SetScopeProvider(null!));
+    }
+
+    [Fact]
+    public void Disposed_boundary_failures_are_sentinel_safe_in_message_and_to_string()
+    {
+        const string sentinel = "synthetic-disposed-boundary-3c4d";
+        var probe = new LogLeakProbe().AddSecret("D", sentinel);
+        probe.Dispose();
+
+        var exception = Assert.Throws<LogLeakDisposedException>(() => probe.Provider.CreateLogger("DisposedBoundaryTests"));
+        Assert.DoesNotContain(sentinel, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(sentinel, exception.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Verification_during_formatter_capture_is_inconclusive_without_telemetry_and_outer_finding_survives()
+    {
+        const string sentinel = "synthetic-during-formatter-5e6f";
+        var telemetry = new RecordingTelemetry();
+        using var probe = new LogLeakProbe(null, telemetry).AddSecret("F", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("DuringCaptureTests");
+        LogLeakVerificationResult? duringCapture = null;
+
+        logger.Log(LogLevel.Information, default, sentinel, null, (state, _) =>
+        {
+            duringCapture = probe.Verify();
+            return state;
+        });
+
+        Assert.Equal(LogLeakVerificationStatus.Inconclusive, duringCapture!.Status);
+        Assert.Contains("active", duringCapture.InconclusiveReason!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, telemetry.ActivationCalls);
+        Assert.Equal(0, telemetry.HeartbeatCalls);
+
+        var outer = probe.Verify();
+        Assert.Equal(LogLeakVerificationStatus.LeaksDetected, outer.Status);
+        Assert.Single(outer.Findings);
+        Assert.Equal(LogLeakLocation.FormattedMessage, outer.Findings[0].Location);
+        Assert.Equal(0, telemetry.ActivationCalls);
+        Assert.Equal(0, telemetry.HeartbeatCalls);
+    }
+
+    [Fact]
+    public void Verification_during_exception_representation_capture_is_inconclusive_and_outer_finding_survives()
+    {
+        const string sentinel = "synthetic-during-exception-7a8b";
+        using var probe = new LogLeakProbe().AddSecret("E", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("DuringCaptureTests");
+        var exception = new VerificationReenteringException(probe, sentinel);
+
+        logger.LogError(exception, "safe exception event");
+
+        Assert.Equal(LogLeakVerificationStatus.Inconclusive, exception.DuringCapture!.Status);
+        var outer = probe.Verify();
+        Assert.Equal(LogLeakVerificationStatus.LeaksDetected, outer.Status);
+        Assert.Contains(outer.Findings, finding => finding.Location == LogLeakLocation.ExceptionRepresentation);
+    }
+
+    [Fact]
+    public void Verification_during_state_and_scope_enumeration_is_inconclusive_and_findings_survive()
+    {
+        const string stateSentinel = "synthetic-during-state-9c0d";
+        const string scopeSentinel = "synthetic-during-scope-1e2f";
+        using var probe = new LogLeakProbe()
+            .AddSecret("T", stateSentinel)
+            .AddSecret("U", scopeSentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("DuringCaptureTests");
+        var state = new VerificationReenteringEntries(probe, "Authorization", stateSentinel);
+
+        logger.Log(LogLevel.Information, default, state, null, static (_, _) => "safe state event");
+        var scope = new VerificationReenteringEntries(probe, "ScopeToken", scopeSentinel);
+        using (logger.BeginScope(scope))
+        {
+            logger.LogInformation("safe scope event");
+        }
+
+        Assert.Equal(LogLeakVerificationStatus.Inconclusive, state.DuringCapture!.Status);
+        Assert.Equal(LogLeakVerificationStatus.Inconclusive, scope.DuringCapture!.Status);
+
+        var outer = probe.Verify();
+        Assert.Equal(LogLeakVerificationStatus.LeaksDetected, outer.Status);
+        Assert.Contains(outer.Findings, finding => finding.Location == LogLeakLocation.StructuredProperty);
+        Assert.Contains(outer.Findings, finding => finding.Location == LogLeakLocation.Scope);
+    }
+
+    [Fact]
+    public void Assert_no_leaks_during_capture_cannot_produce_a_clean_outer_result()
+    {
+        const string sentinel = "synthetic-during-assert-3a4b";
+        using var probe = new LogLeakProbe().AddSecret("Q", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("DuringCaptureTests");
+        var state = new[] { new KeyValuePair<string, object?>("Authorization", sentinel) };
+
+        logger.Log(LogLevel.Information, default, state, null, (_, _) =>
+        {
+            probe.AssertNoLeaks();
+            return "unreachable";
+        });
+
+        var outer = probe.Verify();
+        Assert.Equal(LogLeakVerificationStatus.Inconclusive, outer.Status);
+        Assert.Contains(outer.Findings, finding => finding.Location == LogLeakLocation.StructuredProperty);
+    }
+
+    [Fact]
     public void Detects_templated_and_dictionary_scope_string_values_without_serializing_objects()
     {
         const string sentinel = "synthetic-templated-scope-3e7a";
@@ -1068,6 +1204,15 @@ public sealed partial class LogLeakProbeTests
         Assert.DoesNotContain(registeredValue, exception.ToString(), StringComparison.Ordinal);
     }
 
+    private static void AssertProviderArgumentFailureIsSafe(string sentinel, Action<ILoggerProvider> action)
+    {
+        using var probe = new LogLeakProbe().AddSecret("marker", sentinel);
+        var exception = Assert.ThrowsAny<ArgumentNullException>(() => action(probe.Provider));
+
+        Assert.DoesNotContain(sentinel, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(sentinel, exception.ToString(), StringComparison.Ordinal);
+    }
+
     private static partial class GeneratedLogging
     {
         [LoggerMessage(EventId = 100, Level = LogLevel.Warning, Message = "source generated value {Value}")]
@@ -1116,6 +1261,54 @@ public sealed partial class LogLeakProbeTests
         }
 
         public override string ToString() => value;
+    }
+
+    private sealed class VerificationReenteringException : Exception
+    {
+        private readonly string representation;
+
+        public VerificationReenteringException(LogLeakProbe probe, string representation)
+            : base("safe exception")
+        {
+            this.representation = representation;
+            DuringCapture = null;
+            this.probe = probe;
+        }
+
+        private readonly LogLeakProbe probe;
+
+        public LogLeakVerificationResult? DuringCapture { get; private set; }
+
+        public override string ToString()
+        {
+            DuringCapture = probe.Verify();
+            return representation;
+        }
+    }
+
+    private sealed class VerificationReenteringEntries : IEnumerable<KeyValuePair<string, object?>>
+    {
+        private readonly LogLeakProbe probe;
+        private readonly string key;
+        private readonly string value;
+
+        public VerificationReenteringEntries(LogLeakProbe probe, string key, string value)
+        {
+            this.probe = probe;
+            this.key = key;
+            this.value = value;
+        }
+
+        public LogLeakVerificationResult? DuringCapture { get; private set; }
+
+        public IEnumerator<KeyValuePair<string, object?>> GetEnumerator()
+        {
+            DuringCapture = probe.Verify();
+            yield return new KeyValuePair<string, object?>(key, value);
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
+            => GetEnumerator();
     }
 
     private sealed class DualStructuredState : IEnumerable<KeyValuePair<string, object?>>, IEnumerable<KeyValuePair<string, string>>

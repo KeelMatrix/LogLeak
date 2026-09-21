@@ -169,7 +169,8 @@ public sealed class LogLeakVerificationResult
         IReadOnlyList<LogLeakFinding> findings,
         int capturedEventCount,
         string? inconclusiveReason,
-        IReadOnlyList<string> sentinelValues)
+        IReadOnlyList<string> sentinelValues,
+        bool occurredDuringCapture)
     {
         Status = status;
         Findings = findings;
@@ -182,6 +183,7 @@ public sealed class LogLeakVerificationResult
             ? string.Empty
             : LogLeakDiagnostics.SafeInconclusiveMessage(InconclusiveReason, sentinelValues);
         AssertionDiagnostic = LogLeakDiagnostics.SafeAssertionMessage(Findings, sentinelValues);
+        OccurredDuringCapture = occurredDuringCapture;
     }
 
     private readonly string diagnostic;
@@ -189,6 +191,8 @@ public sealed class LogLeakVerificationResult
     internal string InconclusiveDiagnostic { get; }
 
     internal string AssertionDiagnostic { get; }
+
+    internal bool OccurredDuringCapture { get; }
 
     /// <summary>Gets the verification status.</summary>
     public LogLeakVerificationStatus Status { get; }

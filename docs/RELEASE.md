@@ -21,9 +21,9 @@ This repository publishes `KeelMatrix.LogLeak` from an exact semantic-version ta
    pwsh ./build/Invoke-PackageGate.ps1 -Stage All -Version 0.1.0
    ```
 
-   The isolated package consumer targets `net6.0`, which cannot consume the package's `net8.0` asset. The gate proves from `PackageConsumer.deps.json` that `lib/netstandard2.0/KeelMatrix.LogLeak.dll` was selected, then exercises clean, planted-leak, and deterministic-bound-breach paths.
+   The isolated package consumer runs on the supported `net8.0` runtime but explicitly references the packaged `lib/netstandard2.0/KeelMatrix.LogLeak.dll` asset. The consumer prints and checks the loaded assembly path, then exercises clean, planted-leak, source-generated logging, sentinel-safe boundaries, during-capture verification, and deterministic-bound-breach paths.
 
-5. The release `package` job uses the reusable `.github/workflows/package-gate.yml`, which provisions `10.0.x` and `6.0.x` in the same job before running the consumer. CI invokes that workflow with artifact upload disabled, and a `workflow_dispatch` run of the reusable workflow is a non-publishing way to exercise the exact package setup. Record the workflow run id, `Package / inspect and consume` job, and the consumer asset-proof line from the run output.
+5. The release `package` job uses the reusable `.github/workflows/package-gate.yml`, which provisions `10.0.x` and the supported `8.0.x` SDK/runtime in the same job before running the consumer. CI invokes that workflow with artifact upload disabled, and a `workflow_dispatch` run of the reusable workflow is a non-publishing way to exercise the exact package setup. Record the workflow run id, `Package / inspect and consume` job, and the consumer asset-proof line from the run output.
 
 6. Run the contract scenarios, including the repository-controlled tag-version resolver and downstream artifact-name check:
 

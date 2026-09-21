@@ -27,6 +27,7 @@ public sealed class LogLeakProbe : IDisposable
     private bool payloadLimitExceeded;
     private bool captureFailed;
     private bool reentrantCaptureDetected;
+    private bool verificationDuringCaptureDetected;
     private bool eventInProgress;
     private int inspectionUnitsThisEvent;
     private int findingsThisEvent;
@@ -138,12 +139,14 @@ public sealed class LogLeakProbe : IDisposable
             registrationFrozen = true;
             var status = GetStatus();
             var sentinelValues = GetSentinelValuesSnapshot();
+            var verificationDuringCapture = eventInProgress;
             result = new LogLeakVerificationResult(
                 status,
                 findings.ToArray(),
                 capturedEventCount,
                 status == LogLeakVerificationStatus.Inconclusive ? GetInconclusiveReason(sentinelValues) : null,
-                sentinelValues);
+                sentinelValues,
+                verificationDuringCapture);
         }
 
         if (result.Status == LogLeakVerificationStatus.Clean)
@@ -165,7 +168,11 @@ public sealed class LogLeakProbe : IDisposable
         var result = Verify();
         if (result.Status == LogLeakVerificationStatus.Inconclusive)
         {
-            throw new LogLeakInconclusiveException(result.InconclusiveReason!, result.Findings, result.InconclusiveDiagnostic);
+            throw new LogLeakInconclusiveException(
+                result.InconclusiveReason!,
+                result.Findings,
+                result.InconclusiveDiagnostic,
+                result.OccurredDuringCapture);
         }
 
         if (result.Findings.Count > 0)
@@ -199,6 +206,7 @@ public sealed class LogLeakProbe : IDisposable
             payloadLimitExceeded = false;
             captureFailed = false;
             reentrantCaptureDetected = false;
+            verificationDuringCaptureDetected = false;
             eventInProgress = false;
             inspectionUnitsThisEvent = 0;
             findingsThisEvent = 0;
@@ -228,31 +236,29 @@ public sealed class LogLeakProbe : IDisposable
 
     private CaptureLogger CreateLogger(string categoryName)
     {
-        ThrowIfNull(categoryName, nameof(categoryName));
-
         lock (gate)
         {
+            ThrowIfNull(categoryName, nameof(categoryName), GetSentinelValuesSnapshot());
             ThrowIfDisposed();
             return new CaptureLogger(this, categoryName);
         }
     }
 
-    private IDisposable BeginScope<TState>(TState state)
+    private SentinelSafeScopeHandle BeginScope<TState>(TState state)
         where TState : notnull
     {
         lock (gate)
         {
             ThrowIfDisposed();
-            return scopeProvider.Push(state);
+            return new SentinelSafeScopeHandle(scopeProvider.Push(state));
         }
     }
 
     private void SetScopeProvider(IExternalScopeProvider newScopeProvider)
     {
-        ThrowIfNull(newScopeProvider, nameof(newScopeProvider));
-
         lock (gate)
         {
+            ThrowIfNull(newScopeProvider, nameof(newScopeProvider), GetSentinelValuesSnapshot());
             ThrowIfDisposed();
             scopeProvider = newScopeProvider;
         }
@@ -301,16 +307,53 @@ public sealed class LogLeakProbe : IDisposable
             eventIdThisEvent = eventId;
             sentinelValuesThisEvent = GetSentinelValuesSnapshot();
             eventInProgress = true;
+            var verificationInterruptedCapture = false;
             try
             {
-                var formatted = formatter(state, exception);
+                string? formatted = null;
+                string? exceptionRepresentation = null;
+                try
+                {
+                    formatted = formatter(state, exception);
+                }
+                catch (LogLeakInconclusiveException inconclusive) when (inconclusive.OccurredDuringCapture)
+                {
+                    verificationInterruptedCapture = true;
+                }
+
                 EnsurePayloadWithinLimit(formatted, "formatted message");
 
-                var exceptionRepresentation = exception is null ? null : GetExceptionRepresentation(exception);
+                if (exception is not null)
+                {
+                    try
+                    {
+                        exceptionRepresentation = GetExceptionRepresentation(exception);
+                    }
+                    catch (LogLeakInconclusiveException inconclusive) when (inconclusive.OccurredDuringCapture)
+                    {
+                        verificationInterruptedCapture = true;
+                    }
+                }
+
                 EnsurePayloadWithinLimit(exceptionRepresentation, "exception representation");
 
-                Inspect(categoryName, eventId, formatted, state, scopeProvider, exceptionRepresentation);
-                capturedEventCount++;
+                try
+                {
+                    Inspect(categoryName, eventId, formatted, state, scopeProvider, exceptionRepresentation);
+                }
+                catch (LogLeakInconclusiveException inconclusive) when (inconclusive.OccurredDuringCapture)
+                {
+                    verificationInterruptedCapture = true;
+                }
+
+                if (verificationInterruptedCapture)
+                {
+                    verificationDuringCaptureDetected = true;
+                }
+                else
+                {
+                    capturedEventCount++;
+                }
             }
             catch (InspectionBudgetReachedException)
             {
@@ -545,7 +588,13 @@ public sealed class LogLeakProbe : IDisposable
 
     private LogLeakVerificationStatus GetStatus()
     {
-        if (reentrantCaptureDetected || eventOverflowed || aggregateBudgetExceeded || payloadLimitExceeded || captureFailed)
+        if (eventInProgress
+            || verificationDuringCaptureDetected
+            || reentrantCaptureDetected
+            || eventOverflowed
+            || aggregateBudgetExceeded
+            || payloadLimitExceeded
+            || captureFailed)
         {
             return LogLeakVerificationStatus.Inconclusive;
         }
@@ -558,7 +607,15 @@ public sealed class LogLeakProbe : IDisposable
     private string GetInconclusiveReason(IReadOnlyList<string> sentinelValues)
     {
         string reason;
-        if (reentrantCaptureDetected)
+        if (eventInProgress)
+        {
+            reason = "verification was requested while provider-boundary capture was active";
+        }
+        else if (verificationDuringCaptureDetected)
+        {
+            reason = "verification was requested during provider-boundary capture and the callback did not complete";
+        }
+        else if (reentrantCaptureDetected)
         {
             reason = "the provider-boundary capture detected reentrant logging through the same probe";
         }
@@ -590,6 +647,10 @@ public sealed class LogLeakProbe : IDisposable
         try
         {
             return exception.ToString();
+        }
+        catch (LogLeakInconclusiveException inconclusive) when (inconclusive.OccurredDuringCapture)
+        {
+            throw;
         }
         catch (Exception)
         {
@@ -638,15 +699,27 @@ public sealed class LogLeakProbe : IDisposable
 
     private static void ThrowIfNull<T>(T? value, string parameterName)
         where T : class
+        => ThrowIfNull(value, parameterName, Array.Empty<string>());
+
+    private static void ThrowIfNull<T>(T? value, string parameterName, IReadOnlyList<string> sentinelValues)
+        where T : class
     {
-#if NET8_0_OR_GREATER
-        ArgumentNullException.ThrowIfNull(value, parameterName);
-#else
         if (value is null)
         {
-            throw new ArgumentNullException(parameterName);
+            var safeParameterName = LogLeakDiagnostics.ContainsRegisteredSentinel(parameterName, sentinelValues)
+                ? null
+                : parameterName;
+            throw new SentinelSafeArgumentNullException(safeParameterName);
         }
-#endif
+    }
+
+    private void ThrowIfNullArgument<T>(T? value, string parameterName)
+        where T : class
+    {
+        lock (gate)
+        {
+            ThrowIfNull(value, parameterName, GetSentinelValuesSnapshot());
+        }
     }
 
     private sealed class RegisteredSentinel
@@ -660,6 +733,23 @@ public sealed class LogLeakProbe : IDisposable
         public string Label { get; }
 
         public string Value { get; }
+    }
+
+    private sealed class SentinelSafeArgumentNullException : ArgumentNullException
+    {
+        private readonly string diagnostic;
+
+        public SentinelSafeArgumentNullException(string? parameterName)
+            : base(parameterName)
+        {
+            diagnostic = parameterName is null
+                ? "Value cannot be null."
+                : "Value cannot be null. Parameter: " + parameterName + ".";
+        }
+
+        public override string Message => diagnostic;
+
+        public override string ToString() => diagnostic;
     }
 
     private sealed class CaptureLoggerProvider : ILoggerProvider, ISupportExternalScope
@@ -676,6 +766,21 @@ public sealed class LogLeakProbe : IDisposable
         public void SetScopeProvider(IExternalScopeProvider scopeProvider) => owner.SetScopeProvider(scopeProvider);
 
         public void Dispose() => owner.Dispose();
+    }
+
+    private sealed class SentinelSafeScopeHandle : IDisposable
+    {
+        private IDisposable? inner;
+
+        public SentinelSafeScopeHandle(IDisposable inner)
+        {
+            this.inner = inner;
+        }
+
+        public void Dispose()
+            => Interlocked.Exchange(ref inner, null)?.Dispose();
+
+        public override string ToString() => string.Empty;
     }
 
     private sealed class CaptureLogger : ILogger
@@ -704,7 +809,7 @@ public sealed class LogLeakProbe : IDisposable
         {
             if (formatter is null)
             {
-                ThrowIfNull(formatter, nameof(formatter));
+                owner.ThrowIfNullArgument(formatter, nameof(formatter));
             }
 
             if (IsEnabled(logLevel))
