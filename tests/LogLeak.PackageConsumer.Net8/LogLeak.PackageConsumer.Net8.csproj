@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../../docs/examples/SourceGeneratedLoggingExample.cs" Link="Documentation/SourceGeneratedLoggingExample.cs" />
     <PackageReference Include="KeelMatrix.LogLeak" Version="$(LogLeakPackageVersion)" />
     <PackageReference Include="KeelMatrix.Telemetry" Version="0.1.0" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />

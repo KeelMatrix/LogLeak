@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Loader;
 using KeelMatrix.LogLeak;
+using KeelMatrix.LogLeak.Documentation;
 using Microsoft.Extensions.Logging;
 
 var netstandardAsset = PackageAssetLoader.AssetPath;
@@ -20,6 +21,8 @@ if (!string.Equals(
 {
     throw new InvalidOperationException("The package consumer did not execute the packaged netstandard2.0 LogLeak asset.");
 }
+
+SourceGeneratedLoggingExample.Run();
 
 using var cleanProbe = new LogLeakProbe()
     .AddSecret("probe-pass", "synthetic-consumer-secret-12ab");

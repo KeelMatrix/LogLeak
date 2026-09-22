@@ -38,6 +38,14 @@ pwsh ./build/Invoke-PackageGate.ps1 -Stage All
 
 The package gate restores `KeelMatrix.LogLeak` only from the just-built local package through an isolated source-mapped feed. Its package cache, HTTP cache, CLI home, and consumer project directories are fresh for each run. The explicit consumer runs on `net8.0` while loading the restored package's `lib/netstandard2.0/KeelMatrix.LogLeak.dll` asset as additional compatibility coverage. A second clean consumer uses an ordinary `PackageReference` with no asset exclusion, hint path, or custom assembly resolution; the gate inspects its assets file and runtime output to prove selection of `lib/net8.0/KeelMatrix.LogLeak.dll`. Both consumers exercise clean, planted-leak, source-generated logging, and sentinel-safe argument diagnostics. The gate also restores, builds, and calls the documented ASP.NET Core sample against the same isolated local package. Unsafe or bounded paths fail explicitly as `Inconclusive`.
 
+The source-generated `LoggerMessage` example is maintained once at `docs/examples/SourceGeneratedLoggingExample.cs`. The focused test and both package consumers compile and run that file. The drift guard extracts the first `csharp` block under `Source-generated logging` from both READMEs and compares each block to the canonical source:
+
+```powershell
+pwsh ./build/Test-DocumentedExample.ps1
+```
+
+`pwsh ./build/Test-ReleaseContract.ps1` runs the same guard before its release-contract scenarios.
+
 The release package job is extracted to `.github/workflows/package-gate.yml`. It installs the `10.0.x` SDK and the supported `8.0.x` SDK/runtime required by the `net8.0` test corpus and package consumer, then runs the exact package gate. CI calls this reusable workflow with artifact upload disabled, providing a non-publishing release-package-job path; the workflow is also manually dispatchable with a package version for the same smoke.
 
 ## Formatting and analysis

@@ -143,12 +143,7 @@ public sealed partial class LogLeakProbeTests
     [Fact]
     public void Executes_the_documented_source_generated_logging_example()
     {
-        const string sentinel = "synthetic-logger-value";
-        using var probe = new LogLeakProbe().AddSecret("token", sentinel);
-        using var factory = LoggerFactory.Create(builder => builder.AddProvider(probe.Provider));
-
-        DocumentedGeneratedLogging.RequestCompleted(factory.CreateLogger("PaymentClient"));
-        probe.AssertNoLeaks();
+        KeelMatrix.LogLeak.Documentation.SourceGeneratedLoggingExample.Run();
     }
 
     [Fact]
@@ -1306,12 +1301,6 @@ public sealed partial class LogLeakProbeTests
     {
         [LoggerMessage(EventId = 100, Level = LogLevel.Warning, Message = "source generated value {Value}")]
         public static partial void Write(ILogger logger, string value);
-    }
-
-    private static partial class DocumentedGeneratedLogging
-    {
-        [LoggerMessage(EventId = 42, Level = LogLevel.Information, Message = "request completed")]
-        public static partial void RequestCompleted(ILogger logger);
     }
 
     private sealed class RecordingTelemetry : LogLeakProbe.ILogLeakTelemetry

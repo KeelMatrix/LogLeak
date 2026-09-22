@@ -7,6 +7,7 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $validatorPath = Join-Path $PSScriptRoot 'Validate-ReleaseContract.ps1'
 $resolverPath = Join-Path $PSScriptRoot 'Resolve-ReleaseVersion.ps1'
+$documentedExamplePath = Join-Path $PSScriptRoot 'Test-DocumentedExample.ps1'
 $scratchRoot = [IO.Path]::GetTempPath()
 $fixtureRoot = Join-Path $scratchRoot "logleak-release-contract-$([guid]::NewGuid().ToString('N'))"
 $releaseDate = '2026-09-16'
@@ -269,6 +270,7 @@ $capabilityWording = @(
 
 try {
     New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
+    & $documentedExamplePath -RepositoryRoot $repositoryRoot
     Test-WorkflowTrigger
     Test-ReleaseResolver
     Invoke-Scenario -Name 'planned-unreleased-rejected' -Changelog $plannedChangelog -ShouldPass $false -ExpectedDiagnostic 'no finalized'

@@ -402,6 +402,7 @@ function Invoke-Smoke {
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="$repositoryRoot/docs/examples/SourceGeneratedLoggingExample.cs" Link="SourceGeneratedLoggingExample.cs" />
     <PackageReference Include="KeelMatrix.LogLeak" Version="$Version" GeneratePathProperty="true" ExcludeAssets="compile;runtime" />
     <PackageReference Include="KeelMatrix.Telemetry" Version="0.1.0" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
@@ -450,6 +451,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Loader;
 using System.Runtime.CompilerServices;
 using KeelMatrix.LogLeak;
+using KeelMatrix.LogLeak.Documentation;
 using Microsoft.Extensions.Logging;
 
 var netstandardAsset = Path.Combine(AppContext.BaseDirectory, "consumer-assets", "netstandard2.0", "KeelMatrix.LogLeak.dll");
@@ -468,6 +470,8 @@ if (!string.Equals(
 {
     throw new InvalidOperationException("The package consumer did not execute the packaged netstandard2.0 LogLeak asset.");
 }
+
+SourceGeneratedLoggingExample.Run();
 
 using var cleanProbe = new LogLeakProbe()
     .AddSecret("probe-pass", "synthetic-consumer-clean-18c2");

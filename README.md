@@ -40,17 +40,25 @@ probe.AssertNoLeaks();
 using KeelMatrix.LogLeak;
 using Microsoft.Extensions.Logging;
 
-const string sentinel = "synthetic-logger-value";
-using var probe = new LogLeakProbe().AddSecret("token", sentinel);
-using var factory = LoggerFactory.Create(builder => builder.AddProvider(probe.Provider));
+namespace KeelMatrix.LogLeak.Documentation;
 
-GeneratedLogging.RequestCompleted(factory.CreateLogger("PaymentClient"));
-probe.AssertNoLeaks();
-
-static partial class GeneratedLogging
+internal static partial class SourceGeneratedLoggingExample
 {
-    [LoggerMessage(EventId = 42, Level = LogLevel.Information, Message = "request completed")]
-    public static partial void RequestCompleted(ILogger logger);
+    internal static void Run()
+    {
+        const string sentinel = "synthetic-logger-value";
+        using var probe = new LogLeakProbe().AddSecret("token", sentinel);
+        using var factory = LoggerFactory.Create(builder => builder.AddProvider(probe.Provider));
+
+        GeneratedLogging.RequestCompleted(factory.CreateLogger("PaymentClient"));
+        probe.AssertNoLeaks();
+    }
+
+    private static partial class GeneratedLogging
+    {
+        [LoggerMessage(EventId = 42, Level = LogLevel.Information, Message = "request completed")]
+        internal static partial void RequestCompleted(ILogger logger);
+    }
 }
 ```
 

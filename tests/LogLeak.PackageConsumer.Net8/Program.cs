@@ -1,4 +1,5 @@
 using KeelMatrix.LogLeak;
+using KeelMatrix.LogLeak.Documentation;
 using Microsoft.Extensions.Logging;
 
 var loadedLogLeakAssembly = typeof(LogLeakProbe).Assembly;
@@ -11,14 +12,7 @@ if (!loadedLogLeakAssembly.Location.EndsWith(
     throw new InvalidOperationException("The normal package consumer did not load the packaged net8.0 asset.");
 }
 
-const string documentedSentinel = "synthetic-logger-value";
-using var documentedProbe = new LogLeakProbe().AddSecret("token", documentedSentinel);
-using (var documentedFactory = LoggerFactory.Create(builder => builder.AddProvider(documentedProbe.Provider)))
-{
-    DocumentedGeneratedLogging.RequestCompleted(documentedFactory.CreateLogger("PaymentClient"));
-}
-
-documentedProbe.AssertNoLeaks();
+SourceGeneratedLoggingExample.Run();
 
 using var cleanProbe = new LogLeakProbe().AddSecret("C", "synthetic-normal-consumer-clean-12ab");
 using (var cleanFactory = LoggerFactory.Create(builder => builder.AddProvider(cleanProbe.Provider)))
@@ -111,12 +105,6 @@ static TException AssertThrows<TException>(Action action)
     }
 
     throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
-}
-
-internal static partial class DocumentedGeneratedLogging
-{
-    [LoggerMessage(EventId = 42, Level = LogLevel.Information, Message = "request completed")]
-    internal static partial void RequestCompleted(ILogger logger);
 }
 
 internal static partial class GeneratedLogging

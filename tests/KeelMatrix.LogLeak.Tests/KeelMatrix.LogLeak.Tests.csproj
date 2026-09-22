@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../../docs/examples/SourceGeneratedLoggingExample.cs" Link="Documentation/SourceGeneratedLoggingExample.cs" />
     <ProjectReference Include="../../src/KeelMatrix.LogLeak/KeelMatrix.LogLeak.csproj" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="../../docs/examples/SourceGeneratedLoggingExample.cs" Link="Documentation/SourceGeneratedLoggingExample.cs" />
     <PackageReference Include="KeelMatrix.LogLeak" GeneratePathProperty="true" ExcludeAssets="compile;runtime" />
     <PackageReference Include="KeelMatrix.Telemetry" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
