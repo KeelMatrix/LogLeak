@@ -944,7 +944,18 @@ internal sealed class DuringCaptureEntries : IEnumerable<KeyValuePair<string, ob
     $aspnetStdout = Join-Path $aspnetRoot 'stdout.log'
     $aspnetStderr = Join-Path $aspnetRoot 'stderr.log'
     $aspnetUrl = 'http://127.0.0.1:5287'
-    $aspnetProcess = Start-Process -FilePath 'dotnet' -ArgumentList @($aspnetDll, '--urls', $aspnetUrl) -WindowStyle Hidden -PassThru -RedirectStandardOutput $aspnetStdout -RedirectStandardError $aspnetStderr
+    $startProcessParameters = @{
+        FilePath = 'dotnet'
+        ArgumentList = @($aspnetDll, '--urls', $aspnetUrl)
+        PassThru = $true
+        RedirectStandardOutput = $aspnetStdout
+        RedirectStandardError = $aspnetStderr
+    }
+    if ($IsWindows) {
+        $startProcessParameters.WindowStyle = 'Hidden'
+    }
+
+    $aspnetProcess = Start-Process @startProcessParameters
     try {
         $responseContent = $null
         $deadline = (Get-Date).AddSeconds(30)
