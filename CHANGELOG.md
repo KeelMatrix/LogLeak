@@ -15,5 +15,8 @@ All notable changes to this project are documented here.
 - Same-probe reentrant provider-boundary capture is rejected without budget mutation and makes later verification inconclusive.
 - Escaped findings, results, and diagnostic exceptions retain only precomputed safe text and metadata.
 - Scope handles and provider-boundary argument failures remain sentinel-safe, including their `ToString()` representations.
+- Provider-boundary argument diagnostics filter their complete composed fallback wording while preserving a safe `ParamName`.
 - Verification attempted during an active formatter, exception, state, or scope callback is explicitly inconclusive without success telemetry.
-- Consumer documentation and package smoke cover source-generated `LoggerMessage` usage.
+- Source-generated `LoggerMessage` documentation uses a valid non-overlapping sentinel pair and is executed by the focused test and package consumer.
+- Package smoke retains explicit `netstandard2.0` coverage and adds a normal `net8.0` `PackageReference` consumer plus isolated ASP.NET Core artifact validation.
+- Troubleshooting distinguishes bounded-limit, reentrant, active-capture, and callback-failure `Inconclusive` outcomes with safe next actions.

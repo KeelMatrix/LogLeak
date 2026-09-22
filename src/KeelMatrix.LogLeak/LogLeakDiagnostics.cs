@@ -81,6 +81,20 @@ internal static class LogLeakDiagnostics
         return ContainsRegisteredSentinel(minimal, sentinelValues) ? string.Empty : minimal;
     }
 
+    public static string SafeArgumentNullMessage(string? parameterName, IReadOnlyList<string> sentinelValues)
+    {
+        var detailed = parameterName is null
+            ? "Value cannot be null."
+            : "Value cannot be null. Parameter: " + parameterName + ".";
+        if (!ContainsRegisteredSentinel(detailed, sentinelValues))
+        {
+            return detailed;
+        }
+
+        var minimal = "A required argument was null.";
+        return ContainsRegisteredSentinel(minimal, sentinelValues) ? string.Empty : minimal;
+    }
+
     public static string SafeText(string text, IReadOnlyList<string> sentinelValues)
         => ContainsRegisteredSentinel(text, sentinelValues) ? string.Empty : text;
 

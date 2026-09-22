@@ -636,7 +636,7 @@ public sealed class LogLeakProbe : IDisposable
         }
         else
         {
-            reason = "the provider-boundary capture encountered an unsupported logging failure";
+            reason = "a formatter, exception representation, structured-state, or scope callback failed during provider-boundary capture";
         }
 
         return LogLeakDiagnostics.SafeInconclusiveReason(reason, sentinelValues);
@@ -709,7 +709,7 @@ public sealed class LogLeakProbe : IDisposable
             var safeParameterName = LogLeakDiagnostics.ContainsRegisteredSentinel(parameterName, sentinelValues)
                 ? null
                 : parameterName;
-            throw new SentinelSafeArgumentNullException(safeParameterName);
+            throw new SentinelSafeArgumentNullException(safeParameterName, sentinelValues);
         }
     }
 
@@ -739,12 +739,10 @@ public sealed class LogLeakProbe : IDisposable
     {
         private readonly string diagnostic;
 
-        public SentinelSafeArgumentNullException(string? parameterName)
+        public SentinelSafeArgumentNullException(string? parameterName, IReadOnlyList<string> sentinelValues)
             : base(parameterName)
         {
-            diagnostic = parameterName is null
-                ? "Value cannot be null."
-                : "Value cannot be null. Parameter: " + parameterName + ".";
+            diagnostic = LogLeakDiagnostics.SafeArgumentNullMessage(parameterName, sentinelValues);
         }
 
         public override string Message => diagnostic;

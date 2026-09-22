@@ -39,7 +39,7 @@ Source-generated `LoggerMessage` methods use the same provider boundary:
 using KeelMatrix.LogLeak;
 using Microsoft.Extensions.Logging;
 
-const string sentinel = "synthetic-logger-token";
+const string sentinel = "synthetic-logger-value";
 using var probe = new LogLeakProbe().AddSecret("token", sentinel);
 using var factory = LoggerFactory.Create(builder => builder.AddProvider(probe.Provider));
 
@@ -84,6 +84,15 @@ Use synthetic test-only values. This package verifies registered sentinels at th
 ## Scope boundary
 
 Register `probe.Provider` before opening any scopes that the probe should observe. Scopes opened before provider registration are outside the declared observed boundary and may result in a clean verification even when they contain a registered sentinel. Within the observed boundary, structured state and scopes are classified separately: state supports direct strings in the two documented enumerable shapes, while scopes additionally support plain and templated strings. Opaque objects and non-string values are excluded. Dictionary-scope support does not imply dictionary-state support for other shapes, and a sentinel held only in an excluded value such as `Dictionary<string, int>` can therefore produce a clean result.
+
+## Troubleshooting
+
+An `Inconclusive` result means LogLeak could not prove a clean result; it is never treated as clean. Check the safe `InconclusiveReason` before changing limits:
+
+- A capture, payload, inspection-unit, or finding limit was reached: reduce the logged work or increase only the specific `LogLeakOptions` limit when the test can safely handle the additional bounded memory and processing.
+- Same-probe reentrant logging was detected: remove logging from the formatter, exception representation, state enumeration, or scope enumeration callback that logs through the same probe.
+- Verification was requested while capture or one of those callbacks was active: let the logging call and its callbacks finish, then call `Verify()` or `AssertNoLeaks()` afterward.
+- A formatter, exception representation, structured-state enumeration, or scope enumeration callback failed: correct that callback and rerun the verification; do not expose the original sensitive input while diagnosing it.
 
 ## Documentation
 

@@ -32,6 +32,15 @@ If a formatter or exception representation synchronously logs through the same p
 
 A verification requested from an active formatter, exception-representation, state-enumeration, or scope-enumeration callback is itself `Inconclusive` and does not request success telemetry. Scope handles returned by `BeginScope` are opaque to callers; disposing one still removes the corresponding observed scope.
 
+## Inconclusive outcomes
+
+`Inconclusive` is fail-closed: the verifier could not prove a clean result. Use the safe `InconclusiveReason` to choose the next action:
+
+- For a capture, payload, inspection-unit, or finding limit breach, reduce the logged work or increase only the named bounded `LogLeakOptions` limit when the test can safely handle it.
+- For same-probe reentrant logging, remove logging from the formatter, exception representation, state enumeration, or scope enumeration callback that logs through the same probe.
+- For verification requested during active capture or callback processing, let the logging call and callback finish before calling `Verify()` or `AssertNoLeaks()`.
+- For a callback failure, correct the formatter, exception representation, structured-state enumeration, or scope enumeration callback and rerun without exposing the sensitive input.
+
 ## Scope boundary
 
 Register the capture provider before opening scopes that the probe should observe. Scopes opened before provider registration are outside the declared observed boundary and may result in a clean verification even when they contain a registered sentinel. This is a limitation of the provider-registration boundary, not proof that the earlier scope was safe.

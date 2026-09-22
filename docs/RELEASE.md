@@ -21,7 +21,7 @@ This repository publishes `KeelMatrix.LogLeak` from an exact semantic-version ta
    pwsh ./build/Invoke-PackageGate.ps1 -Stage All -Version 0.1.0
    ```
 
-   The isolated package consumer runs on the supported `net8.0` runtime but explicitly references the packaged `lib/netstandard2.0/KeelMatrix.LogLeak.dll` asset. The consumer prints and checks the loaded assembly path, then exercises clean, planted-leak, source-generated logging, sentinel-safe boundaries, during-capture verification, and deterministic-bound-breach paths.
+   The gate retains an explicit `netstandard2.0` asset consumer as additional compatibility coverage and adds a normal `net8.0` `PackageReference` consumer with no asset exclusion, hint path, or custom assembly resolution. It inspects the normal consumer's assets file and runtime output to prove the packaged `lib/net8.0/KeelMatrix.LogLeak.dll` asset is selected. Both consumers exercise clean, planted-leak, source-generated logging, and sentinel-safe provider-argument diagnostics. The gate also restores and calls the documented ASP.NET Core sample against the same isolated local package feed with fresh package and HTTP caches.
 
 5. The release `package` job uses the reusable `.github/workflows/package-gate.yml`, which provisions `10.0.x` and the supported `8.0.x` SDK/runtime in the same job before running the consumer. CI invokes that workflow with artifact upload disabled, and a `workflow_dispatch` run of the reusable workflow is a non-publishing way to exercise the exact package setup. Record the workflow run id, `Package / inspect and consume` job, and the consumer asset-proof line from the run output.
 

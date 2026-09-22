@@ -532,9 +532,15 @@ if (scopeProbe.Verify().Findings.Count != 1)
     throw new InvalidOperationException("The package consumer scope handle did not preserve disposal behavior.");
 }
 
-AssertProviderArgumentIsSafe("categoryName", provider => provider.CreateLogger(null!));
-AssertProviderArgumentIsSafe("formatter", provider => provider.CreateLogger("PackageConsumer").Log<string>(LogLevel.Information, default, "safe", null, null!));
-AssertProviderArgumentIsSafe("newScopeProvider", provider => ((ISupportExternalScope)provider).SetScopeProvider(null!));
+AssertProviderArgumentIsSafe("categoryName", provider => provider.CreateLogger(null!), expectedParameterName: null);
+AssertProviderArgumentIsSafe("formatter", provider => provider.CreateLogger("PackageConsumer").Log<string>(LogLevel.Information, default, "safe", null, null!), expectedParameterName: null);
+AssertProviderArgumentIsSafe("newScopeProvider", provider => ((ISupportExternalScope)provider).SetScopeProvider(null!), expectedParameterName: null);
+AssertProviderArgumentIsSafe("Value cannot be null.", provider => provider.CreateLogger(null!), expectedParameterName: "categoryName");
+AssertProviderArgumentIsSafe("Value cannot be null. Parameter: categoryName.", provider => provider.CreateLogger(null!), expectedParameterName: "categoryName");
+AssertProviderArgumentIsSafe("Value cannot be null.", provider => provider.CreateLogger("PackageConsumer").Log<string>(LogLevel.Information, default, "safe", null, null!), expectedParameterName: "formatter");
+AssertProviderArgumentIsSafe("Value cannot be null. Parameter: formatter.", provider => provider.CreateLogger("PackageConsumer").Log<string>(LogLevel.Information, default, "safe", null, null!), expectedParameterName: "formatter");
+AssertProviderArgumentIsSafe("Value cannot be null.", provider => ((ISupportExternalScope)provider).SetScopeProvider(null!), expectedParameterName: "newScopeProvider");
+AssertProviderArgumentIsSafe("Value cannot be null. Parameter: newScopeProvider.", provider => ((ISupportExternalScope)provider).SetScopeProvider(null!), expectedParameterName: "newScopeProvider");
 
 const string duringCaptureSentinel = "synthetic-consumer-during-capture-89cd";
 using var duringCaptureProbe = new LogLeakProbe().AddSecret("I", duringCaptureSentinel);
@@ -684,11 +690,12 @@ catch (LogLeakInconclusiveException exception) when (!exception.ToString().Conta
 
 Console.WriteLine("Package consumer smoke passed.");
 
-static void AssertProviderArgumentIsSafe(string sentinel, Action<ILoggerProvider> action)
+static void AssertProviderArgumentIsSafe(string sentinel, Action<ILoggerProvider> action, string? expectedParameterName)
 {
     using var probe = new LogLeakProbe().AddSecret("J", sentinel);
     var exception = AssertThrows<ArgumentNullException>(() => action(probe.Provider));
-    if (exception.Message.Contains(sentinel, StringComparison.Ordinal)
+    if (!string.Equals(exception.ParamName, expectedParameterName, StringComparison.Ordinal)
+        || exception.Message.Contains(sentinel, StringComparison.Ordinal)
         || exception.ToString().Contains(sentinel, StringComparison.Ordinal))
     {
         throw new InvalidOperationException("A provider argument diagnostic contained the registered sentinel.");
@@ -807,6 +814,166 @@ internal sealed class DuringCaptureEntries : IEnumerable<KeyValuePair<string, ob
         throw "The net8.0 package consumer did not copy '$assetPath'."
     }
     Write-Host 'Consumer asset proof: net8.0 runtime output loaded lib/netstandard2.0/KeelMatrix.LogLeak.dll from consumer-assets/netstandard2.0.'
+
+    $normalConsumerProject = Join-Path $repositoryRoot 'tests/LogLeak.PackageConsumer.Net8/LogLeak.PackageConsumer.Net8.csproj'
+    $normalConsumerRoot = Join-Path $smokeRoot 'normal-net8-consumer'
+    $normalConsumerIntermediate = Join-Path $normalConsumerRoot 'obj'
+    $normalConsumerOutput = Join-Path $normalConsumerRoot 'bin'
+    Ensure-Directory $normalConsumerRoot
+    Ensure-Directory $normalConsumerIntermediate
+    Ensure-Directory $normalConsumerOutput
+
+    Invoke-DotNet @(
+        'restore', $normalConsumerProject,
+        '--configfile', $consumerConfig,
+        '--force', '--no-cache',
+        "-p:LogLeakPackageVersion=$Version",
+        "-p:BaseIntermediateOutputPath=$(Add-TrailingSeparator $normalConsumerIntermediate)",
+        "-p:RestorePackagesPath=$consumerCache"
+    ) @{
+        NUGET_PACKAGES = $consumerCache
+        NUGET_HTTP_CACHE_PATH = $httpCache
+        DOTNET_CLI_HOME = $cliHome
+        KEELMATRIX_NO_TELEMETRY = '1'
+        DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+    }
+
+    $normalConsumerAssets = Join-Path $normalConsumerIntermediate 'project.assets.json'
+    if (-not (Test-Path -LiteralPath $normalConsumerAssets)) {
+        throw "The normal net8.0 package consumer did not produce '$normalConsumerAssets'."
+    }
+    $assetJson = Get-Content -Raw -LiteralPath $normalConsumerAssets | ConvertFrom-Json
+    $net8Target = $assetJson.targets.'net8.0'."KeelMatrix.LogLeak/$Version"
+    $net8CompileAssets = @($net8Target.compile.PSObject.Properties.Name)
+    if ($net8CompileAssets -notcontains 'lib/net8.0/KeelMatrix.LogLeak.dll') {
+        throw 'The normal net8.0 package consumer did not select the packaged lib/net8.0 asset.'
+    }
+    Write-Host 'Consumer asset proof: normal PackageReference selected lib/net8.0/KeelMatrix.LogLeak.dll.'
+
+    Invoke-DotNet @(
+        'run', '--project', $normalConsumerProject,
+        '--configuration', 'Release',
+        '--no-restore',
+        "-p:LogLeakPackageVersion=$Version",
+        "-p:BaseOutputPath=$(Add-TrailingSeparator $normalConsumerOutput)",
+        "-p:BaseIntermediateOutputPath=$(Add-TrailingSeparator $normalConsumerIntermediate)"
+    ) @{
+        NUGET_PACKAGES = $consumerCache
+        NUGET_HTTP_CACHE_PATH = $httpCache
+        DOTNET_CLI_HOME = $cliHome
+        KEELMATRIX_NO_TELEMETRY = '1'
+        DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+    }
+    Write-Host 'Normal net8.0 PackageReference consumer proof: clean, planted leak, source-generated logging, and sentinel-safe argument diagnostics passed.'
+
+    $aspnetRoot = Join-Path $smokeRoot 'aspnet-consumer'
+    $aspnetCache = Join-Path $aspnetRoot 'nuget-packages'
+    $aspnetHttpCache = Join-Path $aspnetRoot 'nuget-http-cache'
+    $aspnetCliHome = Join-Path $aspnetRoot 'dotnet-home'
+    $aspnetIntermediate = Join-Path $aspnetRoot 'obj'
+    $aspnetOutput = Join-Path $aspnetRoot 'bin'
+    $aspnetConfig = Join-Path $aspnetRoot 'NuGet.config'
+    Ensure-Directory $aspnetRoot
+    Ensure-Directory $aspnetCache
+    Ensure-Directory $aspnetHttpCache
+    Ensure-Directory $aspnetCliHome
+    Ensure-Directory $aspnetIntermediate
+    Ensure-Directory $aspnetOutput
+
+    @"
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="local-package-feed" value="$localFeed" />
+    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+  </packageSources>
+  <packageSourceMapping>
+    <clear />
+    <packageSource key="local-package-feed">
+      <package pattern="KeelMatrix.LogLeak" />
+    </packageSource>
+    <packageSource key="nuget.org">
+      <package pattern="KeelMatrix.Telemetry" />
+      <package pattern="Microsoft.AspNetCore.*" />
+      <package pattern="Microsoft.Bcl.*" />
+      <package pattern="Microsoft.Extensions.*" />
+      <package pattern="Microsoft.NETCore.*" />
+      <package pattern="Microsoft.WindowsDesktop.*" />
+      <package pattern="System.*" />
+      <package pattern="runtime.*" />
+      <package pattern="NETStandard.Library" />
+    </packageSource>
+  </packageSourceMapping>
+</configuration>
+"@ | Set-Content -LiteralPath $aspnetConfig -Encoding utf8NoBOM
+
+    $aspnetProject = Join-Path $repositoryRoot 'samples/KeelMatrix.LogLeak.AspNetCore/KeelMatrix.LogLeak.AspNetCore.csproj'
+    Invoke-DotNet @(
+        'restore', $aspnetProject,
+        '--configfile', $aspnetConfig,
+        '--force', '--no-cache',
+        "-p:BaseIntermediateOutputPath=$(Add-TrailingSeparator $aspnetIntermediate)",
+        "-p:RestorePackagesPath=$aspnetCache"
+    ) @{
+        NUGET_PACKAGES = $aspnetCache
+        NUGET_HTTP_CACHE_PATH = $aspnetHttpCache
+        DOTNET_CLI_HOME = $aspnetCliHome
+        KEELMATRIX_NO_TELEMETRY = '1'
+        DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+    }
+    Invoke-DotNet @(
+        'build', $aspnetProject,
+        '--configuration', 'Release',
+        '--no-restore',
+        "-p:BaseOutputPath=$(Add-TrailingSeparator $aspnetOutput)",
+        "-p:BaseIntermediateOutputPath=$(Add-TrailingSeparator $aspnetIntermediate)"
+    ) @{
+        NUGET_PACKAGES = $aspnetCache
+        NUGET_HTTP_CACHE_PATH = $aspnetHttpCache
+        DOTNET_CLI_HOME = $aspnetCliHome
+        KEELMATRIX_NO_TELEMETRY = '1'
+        DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+    }
+
+    $aspnetDll = Join-Path $aspnetOutput 'Release/net8.0/KeelMatrix.LogLeak.AspNetCore.dll'
+    if (-not (Test-Path -LiteralPath $aspnetDll)) {
+        throw "The ASP.NET Core package consumer did not produce '$aspnetDll'."
+    }
+
+    $aspnetStdout = Join-Path $aspnetRoot 'stdout.log'
+    $aspnetStderr = Join-Path $aspnetRoot 'stderr.log'
+    $aspnetUrl = 'http://127.0.0.1:5287'
+    $aspnetProcess = Start-Process -FilePath 'dotnet' -ArgumentList @($aspnetDll, '--urls', $aspnetUrl) -WindowStyle Hidden -PassThru -RedirectStandardOutput $aspnetStdout -RedirectStandardError $aspnetStderr
+    try {
+        $responseContent = $null
+        $deadline = (Get-Date).AddSeconds(30)
+        while ((Get-Date) -lt $deadline -and $null -eq $responseContent) {
+            if ($aspnetProcess.HasExited) {
+                break
+            }
+
+            try {
+                $response = Invoke-WebRequest -Uri ($aspnetUrl + '/health') -UseBasicParsing -TimeoutSec 2
+                $responseContent = $response.Content
+            }
+            catch {
+                Start-Sleep -Milliseconds 250
+            }
+        }
+
+        if ($responseContent -ne '{"status":"LogLeak clean"}') {
+            $details = if (Test-Path -LiteralPath $aspnetStderr) { Get-Content -Raw -LiteralPath $aspnetStderr } else { '' }
+            throw "The packaged ASP.NET Core sample did not return the expected clean response. Response='$responseContent'. Error='$details'."
+        }
+    }
+    finally {
+        if (-not $aspnetProcess.HasExited) {
+            Stop-Process -Id $aspnetProcess.Id -Force
+            $aspnetProcess.WaitForExit()
+        }
+    }
+    Write-Host 'ASP.NET Core artifact proof: isolated source-mapped restore selected the local package and /health returned LogLeak clean.'
 }
 
 switch ($Stage) {

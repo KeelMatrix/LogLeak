@@ -4,18 +4,16 @@ This sample demonstrates the smallest ASP.NET Core integration: a `LogLeakProbe`
 
 ## Run against the built package
 
-From the repository root, build the package and create the isolated local feed:
+From the repository root, build the package, restore and build this sample against it through a fresh source-mapped cache, and call `/health`:
 
 ```powershell
 pwsh ./build/Invoke-PackageGate.ps1 -Stage All
 ```
 
-Restore and build the sample using that package feed:
+The package gate proves the isolated restore selected the just-built local package rather than a cached or published copy, then starts the built artifact and expects `{"status":"LogLeak clean"}` from `/health`. To run that exact built artifact manually after the gate:
 
 ```powershell
-$feed = (Resolve-Path ./artifacts/gate/packages).Path
-dotnet restore ./samples/KeelMatrix.LogLeak.AspNetCore/KeelMatrix.LogLeak.AspNetCore.csproj --source $feed --source https://api.nuget.org/v3/index.json --force
-dotnet build ./samples/KeelMatrix.LogLeak.AspNetCore/KeelMatrix.LogLeak.AspNetCore.csproj -c Release --no-restore
+$sampleDll = (Resolve-Path ./artifacts/gate/consumer/aspnet-consumer/bin/Release/net8.0/KeelMatrix.LogLeak.AspNetCore.dll).Path
 ```
 
 Run the web app on a fixed local address:
@@ -23,7 +21,7 @@ Run the web app on a fixed local address:
 ```powershell
 $env:KEELMATRIX_NO_TELEMETRY = '1'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-dotnet run --project ./samples/KeelMatrix.LogLeak.AspNetCore/KeelMatrix.LogLeak.AspNetCore.csproj -c Release --no-build --no-restore --urls http://127.0.0.1:5287
+dotnet $sampleDll --urls http://127.0.0.1:5287
 ```
 
 In a second terminal, call the endpoint:

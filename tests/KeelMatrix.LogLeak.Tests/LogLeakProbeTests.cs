@@ -99,6 +99,59 @@ public sealed partial class LogLeakProbeTests
     }
 
     [Fact]
+    public void Provider_boundary_argument_diagnostics_filter_fixed_and_composed_wording()
+    {
+        const string fixedWording = "Value cannot be null.";
+        const string categoryNameDiagnostic = "Value cannot be null. Parameter: categoryName.";
+        const string formatterDiagnostic = "Value cannot be null. Parameter: formatter.";
+        const string scopeProviderDiagnostic = "Value cannot be null. Parameter: newScopeProvider.";
+
+        AssertProviderArgumentFailureIsSafe(
+            fixedWording,
+            "marker",
+            provider => provider.CreateLogger(null!),
+            expectedParameterName: "categoryName");
+        AssertProviderArgumentFailureIsSafe(
+            categoryNameDiagnostic,
+            "marker",
+            provider => provider.CreateLogger(null!),
+            expectedParameterName: "categoryName");
+
+        AssertProviderArgumentFailureIsSafe(
+            fixedWording,
+            "marker",
+            provider => provider.CreateLogger("ArgumentTests").Log<string>(LogLevel.Information, default, "safe", null, null!),
+            expectedParameterName: "formatter");
+        AssertProviderArgumentFailureIsSafe(
+            formatterDiagnostic,
+            "marker",
+            provider => provider.CreateLogger("ArgumentTests").Log<string>(LogLevel.Information, default, "safe", null, null!),
+            expectedParameterName: "formatter");
+
+        AssertProviderArgumentFailureIsSafe(
+            fixedWording,
+            "marker",
+            provider => ((ISupportExternalScope)provider).SetScopeProvider(null!),
+            expectedParameterName: "newScopeProvider");
+        AssertProviderArgumentFailureIsSafe(
+            scopeProviderDiagnostic,
+            "marker",
+            provider => ((ISupportExternalScope)provider).SetScopeProvider(null!),
+            expectedParameterName: "newScopeProvider");
+    }
+
+    [Fact]
+    public void Executes_the_documented_source_generated_logging_example()
+    {
+        const string sentinel = "synthetic-logger-value";
+        using var probe = new LogLeakProbe().AddSecret("token", sentinel);
+        using var factory = LoggerFactory.Create(builder => builder.AddProvider(probe.Provider));
+
+        DocumentedGeneratedLogging.RequestCompleted(factory.CreateLogger("PaymentClient"));
+        probe.AssertNoLeaks();
+    }
+
+    [Fact]
     public void Disposed_boundary_failures_are_sentinel_safe_in_message_and_to_string()
     {
         const string sentinel = "synthetic-disposed-boundary-3c4d";
@@ -137,6 +190,28 @@ public sealed partial class LogLeakProbeTests
         Assert.Equal(LogLeakLocation.FormattedMessage, outer.Findings[0].Location);
         Assert.Equal(0, telemetry.ActivationCalls);
         Assert.Equal(0, telemetry.HeartbeatCalls);
+    }
+
+    [Fact]
+    public void Callback_failure_is_inconclusive_with_safe_callback_guidance()
+    {
+        const string sentinel = "synthetic-callback-failure-6f7a";
+        using var probe = new LogLeakProbe().AddSecret("F", sentinel);
+        using var loggerFactory = CreateLoggerFactory(probe);
+        var logger = loggerFactory.CreateLogger("CallbackFailureTests");
+
+        logger.Log<string>(
+            LogLevel.Information,
+            default,
+            "safe",
+            null,
+            static (_, _) => throw new InvalidOperationException("formatter failed"));
+
+        var result = probe.Verify();
+
+        Assert.Equal(LogLeakVerificationStatus.Inconclusive, result.Status);
+        Assert.Contains("callback failed", result.InconclusiveReason!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(sentinel, result.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1213,10 +1288,30 @@ public sealed partial class LogLeakProbeTests
         Assert.DoesNotContain(sentinel, exception.ToString(), StringComparison.Ordinal);
     }
 
+    private static void AssertProviderArgumentFailureIsSafe(
+        string sentinel,
+        string label,
+        Action<ILoggerProvider> action,
+        string expectedParameterName)
+    {
+        using var probe = new LogLeakProbe().AddSecret(label, sentinel);
+        var exception = Assert.ThrowsAny<ArgumentNullException>(() => action(probe.Provider));
+
+        Assert.Equal(expectedParameterName, exception.ParamName);
+        Assert.DoesNotContain(sentinel, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(sentinel, exception.ToString(), StringComparison.Ordinal);
+    }
+
     private static partial class GeneratedLogging
     {
         [LoggerMessage(EventId = 100, Level = LogLevel.Warning, Message = "source generated value {Value}")]
         public static partial void Write(ILogger logger, string value);
+    }
+
+    private static partial class DocumentedGeneratedLogging
+    {
+        [LoggerMessage(EventId = 42, Level = LogLevel.Information, Message = "request completed")]
+        public static partial void RequestCompleted(ILogger logger);
     }
 
     private sealed class RecordingTelemetry : LogLeakProbe.ILogLeakTelemetry

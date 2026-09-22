@@ -40,7 +40,7 @@ probe.AssertNoLeaks();
 using KeelMatrix.LogLeak;
 using Microsoft.Extensions.Logging;
 
-const string sentinel = "synthetic-logger-token";
+const string sentinel = "synthetic-logger-value";
 using var probe = new LogLeakProbe().AddSecret("token", sentinel);
 using var factory = LoggerFactory.Create(builder => builder.AddProvider(probe.Provider));
 
@@ -101,7 +101,12 @@ Register `probe.Provider` before opening any scopes that the probe should observ
 
 ## Troubleshooting
 
-An `Inconclusive` result means a configured capture or resource limit was reached. Increase the relevant `LogLeakOptions` limit only when the test can safely handle the additional bounded work; an inconclusive result is never treated as clean.
+An `Inconclusive` result means LogLeak could not prove a clean result; it is never treated as clean. Check the safe `InconclusiveReason` before changing limits:
+
+- A capture, payload, inspection-unit, or finding limit was reached: reduce the logged work or increase only the specific `LogLeakOptions` limit when the test can safely handle the additional bounded memory and processing.
+- Same-probe reentrant logging was detected: remove logging from the formatter, exception representation, state enumeration, or scope enumeration callback that logs through the same probe.
+- Verification was requested while capture or one of those callbacks was active: let the logging call and its callbacks finish, then call `Verify()` or `AssertNoLeaks()` afterward.
+- A formatter, exception representation, structured-state enumeration, or scope enumeration callback failed: correct that callback and rerun the verification; do not expose the original sensitive input while diagnosing it.
 
 ## License
 
