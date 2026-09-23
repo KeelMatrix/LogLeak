@@ -46,6 +46,8 @@ pwsh ./build/Test-DocumentedExample.ps1
 
 `pwsh ./build/Test-ReleaseContract.ps1` runs the same guard before its release-contract scenarios.
 
+`pwsh ./build/Test-VisualStudioArtifacts.ps1` verifies the bounded set of Visual Studio developer-local paths with `git check-ignore`. The release-contract gate runs this check automatically.
+
 The release package job is extracted to `.github/workflows/package-gate.yml`. It installs the `10.0.x` SDK and the supported `8.0.x` SDK/runtime required by the `net8.0` test corpus and package consumer, then runs the exact package gate. CI calls this reusable workflow with artifact upload disabled, providing a non-publishing release-package-job path; the workflow is also manually dispatchable with a package version for the same smoke.
 
 ## Formatting and analysis

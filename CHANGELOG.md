@@ -6,6 +6,7 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Release-contract validation for bounded Visual Studio developer-local files.
 - Bounded `KeelMatrix.LogLeak` provider-boundary verification for registered test-only sentinel values.
 - Safe findings for formatted messages, direct string structured properties, nested scope strings, and exception representations.
 - Direct string values in both supported generic dictionary-state and dictionary-scope shapes, with state and scope contracts documented separately and excluded dictionary value types documented as outside the verification boundary.

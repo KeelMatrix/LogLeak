@@ -23,6 +23,8 @@ dotnet format whitespace LogLeak.Probe.sln --verify-no-changes --no-restore
 
 The focused test project loads its committed telemetry-isolating runsettings automatically. The package gate uses a fresh consumer directory and disables telemetry for local validation. See [docs/DEV.md](docs/DEV.md) for individual build, pack, inspection, smoke, and API-analysis commands.
 
+The release-contract gate also checks that Visual Studio developer-local files, including `Properties/launchSettings.json`, remain ignored.
+
 ## Public API changes
 
 The shipping assembly uses Public API analyzers. After an intentional public API change, run:

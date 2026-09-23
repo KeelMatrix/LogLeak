@@ -8,6 +8,7 @@ $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $validatorPath = Join-Path $PSScriptRoot 'Validate-ReleaseContract.ps1'
 $resolverPath = Join-Path $PSScriptRoot 'Resolve-ReleaseVersion.ps1'
 $documentedExamplePath = Join-Path $PSScriptRoot 'Test-DocumentedExample.ps1'
+$visualStudioArtifactsPath = Join-Path $PSScriptRoot 'Test-VisualStudioArtifacts.ps1'
 $scratchRoot = [IO.Path]::GetTempPath()
 $fixtureRoot = Join-Path $scratchRoot "logleak-release-contract-$([guid]::NewGuid().ToString('N'))"
 $releaseDate = '2026-09-16'
@@ -270,6 +271,10 @@ $capabilityWording = @(
 
 try {
     New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
+    & $visualStudioArtifactsPath -RepositoryRoot $repositoryRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw "Visual Studio developer-local path guard exited $LASTEXITCODE."
+    }
     & $documentedExamplePath -RepositoryRoot $repositoryRoot
     Test-WorkflowTrigger
     Test-ReleaseResolver
