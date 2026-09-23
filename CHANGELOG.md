@@ -4,20 +4,11 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-23
+
 ### Added
 
-- Release-contract validation for bounded Visual Studio developer-local files.
-- Bounded `KeelMatrix.LogLeak` provider-boundary verification for registered test-only sentinel values.
-- Safe findings for formatted messages, direct string structured properties, nested scope strings, and exception representations.
-- Direct string values in both supported generic dictionary-state and dictionary-scope shapes, with state and scope contracts documented separately and excluded dictionary value types documented as outside the verification boundary.
-- Deterministic capture, payload, inspection-unit, and finding limits shared by the `net8.0` and `netstandard2.0` package assets.
-- Sentinel-safe completed diagnostics, including composed metadata and limit explanations.
-- Explicit inconclusive outcomes for capture and resource-bound overflow.
-- Same-probe reentrant provider-boundary capture is rejected without budget mutation and makes later verification inconclusive.
-- Escaped findings, results, and diagnostic exceptions retain only precomputed safe text and metadata.
-- Scope handles and provider-boundary argument failures remain sentinel-safe, including their `ToString()` representations.
-- Provider-boundary argument diagnostics filter their complete composed fallback wording while preserving a safe `ParamName`.
-- Verification attempted during an active formatter, exception, state, or scope callback is explicitly inconclusive without success telemetry.
-- Source-generated `LoggerMessage` documentation is extracted from one canonical snippet, compiled by the focused test and package consumers, and guarded against drift.
-- Package smoke retains explicit `netstandard2.0` coverage and adds a normal `net8.0` `PackageReference` consumer plus isolated ASP.NET Core artifact validation.
-- Troubleshooting distinguishes bounded-limit, reentrant, active-capture, and callback-failure `Inconclusive` outcomes with safe next actions.
+- Bounded, exact-literal verification of registered test-only sentinel values at the `Microsoft.Extensions.Logging` provider boundary, covering formatted messages, source-generated `LoggerMessage` calls, direct string structured properties, nested scopes, and exception representations.
+- Safe leak findings that identify registration labels, broad leak locations, and available logging metadata without retaining or emitting sentinel values, complete messages, exception payloads, or surrounding state.
+- Explicit fail-closed `Inconclusive` outcomes for capture, payload, inspection-unit, finding, event, callback, and same-probe reentrancy limits across the `net8.0` and `netstandard2.0` package assets.
+- Test-framework-neutral integration with ordinary `ILogger` and ASP.NET Core setups, with best-effort telemetry after clean verification and no network requirement for core verification.
