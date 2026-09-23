@@ -316,7 +316,7 @@ function Invoke-Inspect {
     }
     $dependencyNodes = @($dependencyGroups | ForEach-Object { $_.SelectNodes("./*[local-name()='dependency']") })
     $expectedDependencies = @{
-        'KeelMatrix.Telemetry' = '[0.1.0]'
+        'KeelMatrix.Telemetry' = '[0.1.1]'
         'Microsoft.Extensions.Logging.Abstractions' = '8.0.2'
     }
     if ($dependencyNodes.Count -ne ($expectedDependencies.Count * $dependencyGroups.Count)) {
@@ -404,7 +404,7 @@ function Invoke-Smoke {
   <ItemGroup>
     <Compile Include="$repositoryRoot/docs/examples/SourceGeneratedLoggingExample.cs" Link="SourceGeneratedLoggingExample.cs" />
     <PackageReference Include="KeelMatrix.LogLeak" Version="$Version" GeneratePathProperty="true" ExcludeAssets="compile;runtime" />
-    <PackageReference Include="KeelMatrix.Telemetry" Version="0.1.0" />
+    <PackageReference Include="KeelMatrix.Telemetry" Version="0.1.1" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
     <Reference Include="KeelMatrix.LogLeak">
       <HintPath>`$(PkgKeelMatrix_LogLeak)/lib/netstandard2.0/KeelMatrix.LogLeak.dll</HintPath>

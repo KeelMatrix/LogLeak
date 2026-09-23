@@ -37,7 +37,7 @@ function New-Fixture {
 <Project>
   <ItemGroup>
     <PackageVersion Include="KeelMatrix.LogLeak" Version="[$ShippingPackageVersion]" />
-    <PackageVersion Include="KeelMatrix.Telemetry" Version="[0.1.0]" />
+    <PackageVersion Include="KeelMatrix.Telemetry" Version="[0.1.1]" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
   </ItemGroup>
 </Project>
