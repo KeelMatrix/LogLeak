@@ -81,7 +81,7 @@ function Invoke-Scenario {
     New-Fixture $scenarioRoot $Changelog $SourceVersion $InstallVersion $ShippingPackageVersion
 
     $arguments = @(
-        '-NoProfile',
+        '-NoProfile', '-WindowStyle', 'Hidden',
         '-File', $validatorPath,
         '-RepositoryRoot', $scenarioRoot,
         '-Version', $Version,
@@ -117,7 +117,7 @@ function Test-ReleaseResolver {
     $head = (& git -C $repositoryRoot rev-parse HEAD).Trim()
     $commitDate = (& git -C $repositoryRoot show -s --format=%cs $head).Trim()
     $arguments = @(
-        '-NoProfile',
+        '-NoProfile', '-WindowStyle', 'Hidden',
         '-File', $resolverPath,
         '-RepositoryRoot', $repositoryRoot,
         '-Tag', 'v0.1.0',
