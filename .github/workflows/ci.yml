@@ -38,6 +38,14 @@ jobs:
             10.0.x
             8.0.x
 
+      - name: Verify hidden child PowerShell launch guard
+        shell: pwsh
+        run: ./build/Test-NestedPwshLaunch.ps1 -SelfTest
+
+      - name: Scan repository child PowerShell launches
+        shell: pwsh
+        run: ./build/Test-NestedPwshLaunch.ps1
+
       - name: Test release resolver and artifact naming
         shell: pwsh
         run: ./build/Test-ReleaseContract.ps1

@@ -3,8 +3,14 @@ param()
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Invoke-NestedPwsh.ps1')
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$launchGuard = Join-Path $repositoryRoot 'build/Test-NestedPwshLaunch.ps1'
+& $launchGuard -SelfTest
+if ($LASTEXITCODE -ne 0) { throw 'Nested PowerShell launch guard self-test failed.' }
+& $launchGuard
+if ($LASTEXITCODE -ne 0) { throw 'Nested PowerShell launch guard failed.' }
 $validatorPath = Join-Path $PSScriptRoot 'Validate-ReleaseContract.ps1'
 $resolverPath = Join-Path $PSScriptRoot 'Resolve-ReleaseVersion.ps1'
 $documentedExamplePath = Join-Path $PSScriptRoot 'Test-DocumentedExample.ps1'
@@ -81,7 +87,7 @@ function Invoke-Scenario {
     New-Fixture $scenarioRoot $Changelog $SourceVersion $InstallVersion $ShippingPackageVersion
 
     $arguments = @(
-        '-NoProfile', '-WindowStyle', 'Hidden',
+        '-NoProfile',
         '-File', $validatorPath,
         '-RepositoryRoot', $scenarioRoot,
         '-Version', $Version,
@@ -90,7 +96,7 @@ function Invoke-Scenario {
     )
     $command = "pwsh " + (($arguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' ')
     $stopwatch = [Diagnostics.Stopwatch]::StartNew()
-    $output = @(& pwsh @arguments 2>&1 | Out-String)
+    $output = @(Invoke-NestedPwsh -ArgumentList $arguments 2>&1 | Out-String)
     $exitCode = $LASTEXITCODE
     $stopwatch.Stop()
 
@@ -117,7 +123,7 @@ function Test-ReleaseResolver {
     $head = (& git -C $repositoryRoot rev-parse HEAD).Trim()
     $commitDate = (& git -C $repositoryRoot show -s --format=%cs $head).Trim()
     $arguments = @(
-        '-NoProfile', '-WindowStyle', 'Hidden',
+        '-NoProfile',
         '-File', $resolverPath,
         '-RepositoryRoot', $repositoryRoot,
         '-Tag', 'v0.1.0',
@@ -128,7 +134,7 @@ function Test-ReleaseResolver {
         '-CommitDateOverride', $commitDate
     )
     $stopwatch = [Diagnostics.Stopwatch]::StartNew()
-    $output = @(& pwsh @arguments 2>&1 | Out-String)
+    $output = @(Invoke-NestedPwsh -ArgumentList $arguments 2>&1 | Out-String)
     $exitCode = $LASTEXITCODE
     $stopwatch.Stop()
 
