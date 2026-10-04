@@ -151,7 +151,8 @@ public sealed class LogLeakProbe : IDisposable
 
         if (result.Status == LogLeakVerificationStatus.Clean)
         {
-            TrackTelemetryBestEffort();
+            telemetry.TrackActivation();
+            telemetry.TrackHeartbeat();
         }
 
         return result;
@@ -655,25 +656,6 @@ public sealed class LogLeakProbe : IDisposable
         catch (Exception)
         {
             throw new CaptureFailureException();
-        }
-    }
-
-    private void TrackTelemetryBestEffort()
-    {
-        try
-        {
-            telemetry.TrackActivation();
-        }
-        catch (Exception)
-        {
-        }
-
-        try
-        {
-            telemetry.TrackHeartbeat();
-        }
-        catch (Exception)
-        {
         }
     }
 

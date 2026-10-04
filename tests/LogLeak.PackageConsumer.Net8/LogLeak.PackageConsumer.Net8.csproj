@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
-    <LogLeakPackageVersion Condition="'$(LogLeakPackageVersion)' == ''">0.1.0</LogLeakPackageVersion>
+    <LogLeakPackageVersion Condition="'$(LogLeakPackageVersion)' == ''">0.1.1</LogLeakPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>

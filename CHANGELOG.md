@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-04
+
+### Changed
+
+- Delegate telemetry failure handling to the shared `KeelMatrix.Telemetry` client.
+
 ## [0.1.0] - 2026-09-23
 
 ### Added

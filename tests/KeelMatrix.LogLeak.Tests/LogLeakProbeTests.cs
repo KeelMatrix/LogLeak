@@ -1087,22 +1087,6 @@ public sealed partial class LogLeakProbeTests
     }
 
     [Fact]
-    public void Telemetry_failure_does_not_change_verification_outcome()
-    {
-        const string sentinel = "synthetic-telemetry-2f1a";
-        var telemetry = new ThrowingTelemetry();
-        using var probe = new LogLeakProbe(null, telemetry).AddSecret("run", sentinel);
-        using var loggerFactory = CreateLoggerFactory(probe);
-        loggerFactory.CreateLogger("TelemetryTests").LogInformation("safe event");
-
-        var result = probe.Verify();
-
-        Assert.Equal(LogLeakVerificationStatus.Clean, result.Status);
-        Assert.Equal(1, telemetry.ActivationCalls);
-        Assert.Equal(1, telemetry.HeartbeatCalls);
-    }
-
-    [Fact]
     public void Detected_leaks_do_not_request_activation_telemetry()
     {
         const string sentinel = "synthetic-detected-telemetry-3a4b";
@@ -1314,25 +1298,6 @@ public sealed partial class LogLeakProbeTests
         public void TrackHeartbeat() => HeartbeatCalls++;
 
         public override string ToString() => "activation=" + ActivationCalls + ";heartbeat=" + HeartbeatCalls;
-    }
-
-    private sealed class ThrowingTelemetry : LogLeakProbe.ILogLeakTelemetry
-    {
-        public int ActivationCalls { get; private set; }
-
-        public int HeartbeatCalls { get; private set; }
-
-        public void TrackActivation()
-        {
-            ActivationCalls++;
-            throw new InvalidOperationException("telemetry unavailable");
-        }
-
-        public void TrackHeartbeat()
-        {
-            HeartbeatCalls++;
-            throw new InvalidOperationException("telemetry unavailable");
-        }
     }
 
     private sealed class OpaqueScope

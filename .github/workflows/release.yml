@@ -66,6 +66,7 @@ jobs:
           -Version $env:RELEASE_VERSION
           -Tag '${{ github.ref_name }}'
           -ExpectedReleaseDate $env:RELEASE_DATE
+          -ReleaseKind Subsequent
 
       - name: Run repository-controlled platform verification
         shell: pwsh

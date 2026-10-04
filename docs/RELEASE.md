@@ -5,20 +5,20 @@ This repository publishes `KeelMatrix.LogLeak` from an exact semantic-version ta
 ## Before tagging
 
 1. Update the package version in `Directory.Build.props` and keep central dependency versions exact in `Directory.Packages.props`.
-2. Add a finalized entry to `CHANGELOG.md` in the form `## [X.Y.Z] - YYYY-MM-DD`. Keep `## [Unreleased]` separate. For the first public release, use only an `Added` section and describe the product users receive.
+2. Add a finalized entry to `CHANGELOG.md` in the form `## [X.Y.Z] - YYYY-MM-DD`. Keep `## [Unreleased]` separate. For the first public release, use only an `Added` section and describe the product users receive. For later versions, validate with `-ReleaseKind Subsequent`.
 3. Run the repository-controlled contract check with the intended tag and date. The date is required and must match the date of the exact commit that will be tagged:
 
    ```powershell
    # Replace <exact-commit-date> with the YYYY-MM-DD date of the exact commit being tagged.
-   pwsh ./build/Validate-ReleaseContract.ps1 -Version 0.1.0 -Tag v0.1.0 -ExpectedReleaseDate <exact-commit-date>
+   pwsh ./build/Validate-ReleaseContract.ps1 -Version 0.1.1 -Tag v0.1.1 -ExpectedReleaseDate <exact-commit-date> -ReleaseKind Subsequent
    ```
 
-   The check verifies the finalized changelog entry, package version, tag, exact dependency versions, install examples, release date, and first-release wording. It fails closed on a planned or unreleased entry, a metadata mismatch, or remediation-history wording.
+   The check verifies the finalized changelog entry, package version, tag, exact dependency versions, install examples, release date, and selected release-kind criteria. It fails closed on an unfinished entry or metadata mismatch; first-public validation also rejects remediation-history wording.
 
 4. Run the complete local package gate:
 
    ```powershell
-   pwsh ./build/Invoke-PackageGate.ps1 -Stage All -Version 0.1.0
+   pwsh ./build/Invoke-PackageGate.ps1 -Stage All -Version 0.1.1
    ```
 
    The gate retains an explicit `netstandard2.0` asset consumer as additional compatibility coverage and adds a normal `net8.0` `PackageReference` consumer with no asset exclusion, hint path, or custom assembly resolution. It inspects the normal consumer's assets file and runtime output to prove the packaged `lib/net8.0/KeelMatrix.LogLeak.dll` asset is selected. Both consumers compile and run `docs/examples/SourceGeneratedLoggingExample.cs`, the same canonical source extracted into both README examples, alongside clean, planted-leak, and sentinel-safe provider-argument diagnostics. The gate also restores and calls the documented ASP.NET Core sample against the same isolated local package feed with fresh package and HTTP caches.
@@ -38,8 +38,8 @@ Commit and push the verified result before creating its release tag.
 Create and push an exact `vX.Y.Z` tag for the verified commit:
 
 ```powershell
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 The workflow is triggered by tags matching `v[0-9]*`; `build/Resolve-ReleaseVersion.ps1` then independently rejects any tag that is not exactly `vX.Y.Z`. It checks out that tag, confirms the tag points at the checked-out commit, and derives the package version through `build/Resolve-ReleaseVersion.ps1` before writing the version output consumed by downstream artifact names. It then runs the same contract validator, restores from NuGet.org, builds and tests in Release, runs the package/archive/consumer gate, and checks that the artifact directory contains exactly one `.nupkg` and one `.snupkg` for the tag version.

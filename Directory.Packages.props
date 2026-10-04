@@ -4,7 +4,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageVersion Include="KeelMatrix.LogLeak" Version="[0.1.0]" />
+    <PackageVersion Include="KeelMatrix.LogLeak" Version="[0.1.1]" />
     <PackageVersion Include="KeelMatrix.Telemetry" Version="[0.1.1]" />
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="8.0.1" />

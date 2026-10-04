@@ -80,6 +80,7 @@ function Invoke-Scenario {
         [string] $SourceVersion = '0.1.0',
         [string] $InstallVersion = $SourceVersion,
         [string] $ShippingPackageVersion = '0.1.0',
+        [string] $ReleaseKind = 'FirstPublic',
         [string] $ExpectedDiagnostic
     )
 
@@ -92,7 +93,8 @@ function Invoke-Scenario {
         '-RepositoryRoot', $scenarioRoot,
         '-Version', $Version,
         '-Tag', $Tag,
-        '-ExpectedReleaseDate', $releaseDate
+        '-ExpectedReleaseDate', $releaseDate,
+        '-ReleaseKind', $ReleaseKind
     )
     $command = "pwsh " + (($arguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' ')
     $stopwatch = [Diagnostics.Stopwatch]::StartNew()
@@ -126,7 +128,7 @@ function Test-ReleaseResolver {
         '-NoProfile',
         '-File', $resolverPath,
         '-RepositoryRoot', $repositoryRoot,
-        '-Tag', 'v0.1.0',
+        '-Tag', 'v0.1.1',
         '-RefType', 'tag',
         '-ExpectedCommit', $head,
         '-OutputPath', $outputPath,
@@ -156,8 +158,8 @@ function Test-ReleaseResolver {
     }
 
     $version = [string] $values['version']
-    if ($version -ne '0.1.0') {
-        throw "Release resolver output version '$version'; expected '0.1.0'."
+    if ($version -ne '0.1.1') {
+        throw "Release resolver output version '$version'; expected '0.1.1'."
     }
     $expectedArtifacts = @(
         "KeelMatrix.LogLeak.$version.nupkg"
@@ -187,23 +189,30 @@ function Test-WorkflowTrigger {
     $releaseDocumentationPath = Join-Path $repositoryRoot 'docs/RELEASE.md'
     $releaseDocumentation = Get-Content -LiteralPath $releaseDocumentationPath -Raw
     $documentationContainsPattern = $releaseDocumentation.Contains($tagPattern)
-    $firstReleaseTag = 'v0.1.0'
-    $nonReleaseTag = 'release-0.1.0'
-    $firstReleaseMatches = $firstReleaseTag -like $tagPattern
+    $releaseTag = 'v0.1.1'
+    $nonReleaseTag = 'release-0.1.1'
+    $releaseTagMatches = $releaseTag -like $tagPattern
     $nonReleaseMatches = $nonReleaseTag -like $tagPattern
+    $workflowUsesSubsequentContract = $workflowText.Contains('-ReleaseKind Subsequent', [StringComparison]::Ordinal)
+    $documentationUsesSubsequentContract = $releaseDocumentation.Contains('-ReleaseKind Subsequent', [StringComparison]::Ordinal)
 
     Write-Host '[workflow-trigger]'
     Write-Host "Workflow: $workflowPath"
     Write-Host "Pattern: '$tagPattern'"
-    Write-Host "First release '$firstReleaseTag' matches: $firstReleaseMatches"
+    Write-Host "Release '$releaseTag' matches: $releaseTagMatches"
     Write-Host "Non-release '$nonReleaseTag' matches: $nonReleaseMatches"
     Write-Host "Release documentation contains pattern: $documentationContainsPattern"
+    Write-Host "Workflow uses subsequent release contract: $workflowUsesSubsequentContract"
+    Write-Host "Release documentation uses subsequent release contract: $documentationUsesSubsequentContract"
 
     if (-not $documentationContainsPattern) {
         throw "Release documentation '$releaseDocumentationPath' does not contain workflow tag pattern '$tagPattern'."
     }
-    if (-not $firstReleaseMatches) {
-        throw "Release workflow tag pattern '$tagPattern' does not match intended tag '$firstReleaseTag'."
+    if (-not $releaseTagMatches) {
+        throw "Release workflow tag pattern '$tagPattern' does not match intended tag '$releaseTag'."
+    }
+    if (-not $workflowUsesSubsequentContract -or -not $documentationUsesSubsequentContract) {
+        throw 'The published package release must validate with ReleaseKind Subsequent.'
     }
     if ($nonReleaseMatches) {
         throw "Release workflow tag pattern '$tagPattern' unexpectedly matches non-release tag '$nonReleaseTag'."
@@ -230,6 +239,18 @@ $finalizedChangelog = @"
 ### Added
 
 - Provides bounded sentinel verification for captured logging fields.
+"@
+
+$subsequentChangelog = @"
+# Changelog
+
+## [Unreleased]
+
+## [0.1.1] - $releaseDate
+
+### Changed
+
+- Delegate telemetry failure handling to the shared client.
 "@
 
 $remediationPhrases = @(
@@ -286,6 +307,7 @@ try {
     Test-ReleaseResolver
     Invoke-Scenario -Name 'planned-unreleased-rejected' -Changelog $plannedChangelog -ShouldPass $false -ExpectedDiagnostic 'no finalized'
     Invoke-Scenario -Name 'finalized-consistent-passes' -Changelog $finalizedChangelog -ShouldPass $true
+    Invoke-Scenario -Name 'subsequent-release-passes' -Changelog $subsequentChangelog -ShouldPass $true -ReleaseKind Subsequent -Tag 'v0.1.1' -Version '0.1.1' -SourceVersion '0.1.1' -InstallVersion '0.1.1' -ShippingPackageVersion '0.1.1'
     Invoke-Scenario -Name 'changelog-package-mismatch-rejected' -Changelog $finalizedChangelog -ShouldPass $false -SourceVersion '0.1.1' -InstallVersion '0.1.1' -ExpectedDiagnostic "source property 'Version'"
     Invoke-Scenario -Name 'shipping-package-version-mismatch-rejected' -Changelog $finalizedChangelog -ShouldPass $false -ShippingPackageVersion '0.1.1' -ExpectedDiagnostic "central shipping package 'KeelMatrix.LogLeak'"
     for ($index = 0; $index -lt $remediationPhrases.Count; $index++) {
