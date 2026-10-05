@@ -10,9 +10,9 @@
     <Authors>KeelMatrix</Authors>
     <PackageId>KeelMatrix.LogLeak</PackageId>
     <Description>Verify that explicitly registered sensitive values do not survive into your Microsoft.Extensions.Logging event stream during tests.</Description>
-    <PackageTags>logging;security;privacy;testing;ilogger;aspnetcore;redaction;ci</PackageTags>
+    <PackageTags>logging;security;privacy;testing;ilogger;aspnetcore;redaction;ci;keelmatrix-public-product;keelmatrix-primary</PackageTags>
     <RepositoryUrl>https://github.com/KeelMatrix/LogLeak</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/KeelMatrix/LogLeak#readme</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/KeelMatrix/LogLeak</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageIcon>icon.png</PackageIcon>

@@ -2,6 +2,8 @@
 
 `Invoke-PackageGate.ps1` is the reproducible local package validation entry point. It builds the shipping project, creates the exact `.nupkg` and `.snupkg` set, inspects both archives, and runs an isolated package consumer against the `netstandard2.0` asset.
 
+The gate validates the website metadata contract before building. The root manifest must match packable projects, and the package source tags and repository URLs must agree with it.
+
 From the repository root:
 
 ```powershell

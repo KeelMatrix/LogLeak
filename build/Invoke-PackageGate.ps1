@@ -29,6 +29,8 @@ $packageOutput = Join-Path $artifactRoot 'packages'
 $expectedPackageName = "KeelMatrix.LogLeak.$Version.nupkg"
 $expectedSymbolsName = "KeelMatrix.LogLeak.$Version.snupkg"
 
+& (Join-Path $buildDirectory 'Validate-WebsiteMetadata.ps1')
+
 function Add-TrailingSeparator {
     param([Parameter(Mandatory)][string] $Path)
 
@@ -285,8 +287,9 @@ function Invoke-Inspect {
         id = 'KeelMatrix.LogLeak'
         version = $Version
         authors = 'KeelMatrix'
+        projectUrl = 'https://github.com/KeelMatrix/LogLeak'
         description = 'Verify that explicitly registered sensitive values do not survive into your Microsoft.Extensions.Logging event stream during tests.'
-        tags = 'logging security privacy testing ilogger aspnetcore redaction ci'
+        tags = 'logging security privacy testing ilogger aspnetcore redaction ci keelmatrix-public-product keelmatrix-primary'
         license = 'MIT'
         readme = 'README.md'
         icon = 'icon.png'
@@ -303,6 +306,11 @@ function Invoke-Inspect {
         if ($actualValue -ne $expectedMetadata[$key]) {
             throw "Package metadata '$key' was '$actualValue', expected '$($expectedMetadata[$key])'."
         }
+    }
+
+    $packageTypes = $metadata.SelectSingleNode("./*[local-name()='packageTypes']")
+    if ($null -ne $packageTypes) {
+        throw 'Package type must remain NuGet default Dependency (no explicit packageTypes).'
     }
 
     $repository = $metadata.SelectSingleNode("./*[local-name()='repository']")

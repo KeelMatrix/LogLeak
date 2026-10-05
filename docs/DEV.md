@@ -17,6 +17,8 @@ dotnet --version
 
 Repository validation sets `KEELMATRIX_NO_TELEMETRY=1` and `DOTNET_CLI_TELEMETRY_OPTOUT=1` for every spawned process. The focused test project loads these values from its committed `tests/KeelMatrix.LogLeak.Tests/LogLeak.Tests.runsettings` automatically through its project file. The package gate applies the same settings to its consumer automatically.
 
+The package gate first runs the website metadata validator. It requires the root manifest package set to match packable projects, validates the allowed classifications and roles, and compares each project sentinel tag and canonical repository URL with the manifest.
+
 ## Restore and focused tests
 
 ```powershell
