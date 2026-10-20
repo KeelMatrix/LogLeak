@@ -45,7 +45,7 @@ function New-Fixture {
   <ItemGroup>
     <PackageVersion Include="KeelMatrix.LogLeak" Version="[$ShippingPackageVersion]" />
     <PackageVersion Include="KeelMatrix.Telemetry" Version="[0.1.1]" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
   </ItemGroup>
 </Project>
 "@ | Set-Content -LiteralPath (Join-Path $Path 'Directory.Packages.props') -Encoding utf8NoBOM

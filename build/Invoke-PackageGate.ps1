@@ -325,7 +325,7 @@ function Invoke-Inspect {
     $dependencyNodes = @($dependencyGroups | ForEach-Object { $_.SelectNodes("./*[local-name()='dependency']") })
     $expectedDependencies = @{
         'KeelMatrix.Telemetry' = '[0.1.1]'
-        'Microsoft.Extensions.Logging.Abstractions' = '8.0.2'
+        'Microsoft.Extensions.Logging.Abstractions' = '8.0.3'
     }
     if ($dependencyNodes.Count -ne ($expectedDependencies.Count * $dependencyGroups.Count)) {
         throw "Package dependency count was $($dependencyNodes.Count), expected $($($expectedDependencies.Count * $dependencyGroups.Count))."
