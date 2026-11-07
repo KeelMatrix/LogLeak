@@ -6,6 +6,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Preserve the logging abstraction floor used by .NET 8 consumers.
+    ignore:
+      - dependency-name: Microsoft.Extensions.Logging.Abstractions
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
